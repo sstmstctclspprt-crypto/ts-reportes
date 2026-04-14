@@ -15,9 +15,12 @@ const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
 /** PDFs por usuario; solo la Edge Function sube con service_role. */
 const PDF_STORAGE_BUCKET = 'ctpat-pdfs';
+/** Evidencias/firma sensibles en bucket privado por organización/usuario. */
+const EVIDENCE_STORAGE_BUCKET = Deno.env.get('EVIDENCE_BUCKET') ?? 'ctpat-evidence';
 
 interface RegistroRow {
   id: string;
+  organization_id: string | null;
   service_id: string | null;
   folio_pdf: string | null;
   pdf_storage_path: string | null;
@@ -68,15 +71,16 @@ function logoFromUserMetadata(meta: Record<string, unknown> | undefined): string
 }
 
 /**
- * Valida el JWT con Auth (GET /user). Obligatorio: con verify_jwt=false en la puerta,
- * aquí es la única comprobación fiable (no decodificar el payload sin verificar firma).
+ * Valida el JWT con Auth (GET /user) como segunda barrera defensiva.
+ * La puerta de Edge también exige JWT (`verify_jwt=true`).
  */
-async function resolveUserIdFromAuthorization(
+async function resolveAuthContextFromAuthorization(
   authorizationHeader: string | null
-): Promise<string | null> {
+): Promise<{ userId: string; organizationId: string } | null> {
   if (!authorizationHeader?.trim()) return null;
   const raw = authorizationHeader.trim();
-  const token = raw.startsWith('Bearer ') ? raw.slice('Bearer '.length).trim() : raw;
+  if (!raw.startsWith('Bearer ')) return null;
+  const token = raw.slice('Bearer '.length).trim();
   if (!token) return null;
 
   if (!SUPABASE_ANON_KEY) {
@@ -92,7 +96,14 @@ async function resolveUserIdFromAuthorization(
     error
   } = await authClient.auth.getUser(token);
   if (!error && user?.id) {
-    return user.id;
+    const orgId =
+      typeof user.app_metadata?.org_id === 'string' && user.app_metadata.org_id.trim().length > 0
+        ? user.app_metadata.org_id.trim()
+        : user.id;
+    return {
+      userId: user.id,
+      organizationId: orgId
+    };
   }
   console.error('[generate-ctpat-pdf] auth.getUser:', error?.message ?? 'sin usuario');
   return null;
@@ -315,7 +326,8 @@ async function ensureDriveFolders(accessToken: string): Promise<{ pdfFolderId: s
 async function uploadEvidenceImagesToDrive(
   accessToken: string,
   data: RegistroRow,
-  imagesFolderId: string | undefined
+  imagesFolderId: string | undefined,
+  supabaseStorage?: SupabaseForStorage
 ): Promise<{ name: string; id: string }[]> {
   const uploadedImages: { name: string; id: string }[] = [];
   const imageUrls = data.image_urls || [];
@@ -323,18 +335,27 @@ async function uploadEvidenceImagesToDrive(
   for (let index = 0; index < imageUrls.length; index++) {
     const url = imageUrls[index];
     if (!url || typeof url !== 'string') continue;
-    if (!url.startsWith('data:')) continue;
 
-    const match = url.match(/^data:(.+);base64,(.+)$/);
-    if (!match) continue;
-    const [, mimeType, base64Data] = match;
-
-    const binary = atob(base64Data);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
+    let mimeType = 'image/jpeg';
+    let bytes: Uint8Array | null = null;
+    if (url.startsWith('data:')) {
+      const match = url.match(/^data:(.+);base64,(.+)$/);
+      if (!match) continue;
+      const [, parsedMime, base64Data] = match;
+      mimeType = parsedMime;
+      const binary = atob(base64Data);
+      const len = binary.length;
+      bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+    } else if (supabaseStorage) {
+      const { data: blob, error } = await supabaseStorage.storage.from(EVIDENCE_STORAGE_BUCKET).download(url);
+      if (error || !blob) continue;
+      mimeType = blob.type || 'image/jpeg';
+      bytes = new Uint8Array(await blob.arrayBuffer());
     }
+    if (!bytes) continue;
 
     const imageName = `CTPAT_IMG_${data.folio_pdf || data.service_id || data.id}_${index + 1}`;
     try {
@@ -348,21 +369,31 @@ async function uploadEvidenceImagesToDrive(
   return uploadedImages;
 }
 
-/** Decodifica data URL (base64) y embebe la imagen en el PDF. */
-async function embedDataUrlImage(
+/** Soporta data URL legacy o ruta privada en Supabase Storage. */
+async function embedEvidenceImage(
   pdfDoc: PDFDocument,
-  dataUrl: string | null | undefined
+  source: string | null | undefined,
+  supabaseStorage?: SupabaseForStorage
 ): Promise<ReturnType<PDFDocument['embedPng']> | null> {
-  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
-  const m = dataUrl.match(/^data:(.+);base64,(.+)$/);
-  if (!m) return null;
-  const mime = m[1].trim().toLowerCase();
-  const b64 = m[2];
+  if (!source || typeof source !== 'string') return null;
   try {
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    if (mime.includes('png')) return await pdfDoc.embedPng(bytes);
+    if (source.startsWith('data:')) {
+      const m = source.match(/^data:(.+);base64,(.+)$/);
+      if (!m) return null;
+      const mime = m[1].trim().toLowerCase();
+      const b64 = m[2];
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      if (mime.includes('png')) return await pdfDoc.embedPng(bytes);
+      return await pdfDoc.embedJpg(bytes);
+    }
+    if (!supabaseStorage) return null;
+    const { data: blob, error } = await supabaseStorage.storage.from(EVIDENCE_STORAGE_BUCKET).download(source);
+    if (error || !blob) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const mime = (blob.type || '').toLowerCase();
+    if (mime.includes('png') || source.endsWith('.png')) return await pdfDoc.embedPng(bytes);
     return await pdfDoc.embedJpg(bytes);
   } catch {
     return null;
@@ -1164,8 +1195,8 @@ async function buildPdf(
       color: rgb(0, 0.2, 0.6)
     });
 
-    const sigOp = await embedDataUrlImage(pdfDoc, registro.firma_operador);
-    const sigOf = await embedDataUrlImage(pdfDoc, registro.firma_oficial);
+    const sigOp = await embedEvidenceImage(pdfDoc, registro.firma_operador, supabaseStorage);
+    const sigOf = await embedEvidenceImage(pdfDoc, registro.firma_oficial, supabaseStorage);
 
     const sig1X = marginX;
     const sig2X = marginX + sigBoxW + sigGapMech;
@@ -1650,8 +1681,8 @@ async function buildPdf(
     const sigBoxH = 86;
     const sigBottomY = cy3 - sigBoxH;
 
-    const sigOp = await embedDataUrlImage(pdfDoc, registro.firma_operador);
-    const sigOf = await embedDataUrlImage(pdfDoc, registro.firma_oficial);
+    const sigOp = await embedEvidenceImage(pdfDoc, registro.firma_operador, supabaseStorage);
+    const sigOf = await embedEvidenceImage(pdfDoc, registro.firma_oficial, supabaseStorage);
 
     const sig1X = marginX;
     const sig2X = marginX + sigBoxW + sigGapMech;
@@ -1865,7 +1896,7 @@ async function buildPdf(
     const imgY = cellY - imgH - 10; // bottom-left del área de imagen
 
     if (url) {
-      const img = await embedDataUrlImage(pdfDoc, url);
+      const img = await embedEvidenceImage(pdfDoc, url, supabaseStorage);
       if (img) {
         // Mejor forma sin deformar:
         // `scaleToFit` preserva el aspect ratio y evita que se salga del cuadro.
@@ -2011,7 +2042,7 @@ async function buildPdf(
 
     const url = imageUrlsP4[i];
     if (url) {
-      const img = await embedDataUrlImage(pdfDoc, url);
+      const img = await embedEvidenceImage(pdfDoc, url, supabaseStorage);
       if (img) {
         const paddingP4 = 6;
         const innerW = cellWidthP4 - paddingP4 * 2;
@@ -2113,8 +2144,8 @@ Deno.serve(async (req) => {
     });
   }
 
-  const currentUserId = await resolveUserIdFromAuthorization(supabaseAuthHeader);
-  if (!currentUserId) {
+  const authContext = await resolveAuthContextFromAuthorization(supabaseAuthHeader);
+  if (!authContext) {
     return new Response(
       JSON.stringify({
         ok: false,
@@ -2166,8 +2197,15 @@ Deno.serve(async (req) => {
       return jsonError(origin, 400, 'El registro no tiene user_id asociado');
     }
 
-    if (normalizeUuid(row.user_id) !== normalizeUuid(currentUserId)) {
+    if (normalizeUuid(row.user_id) !== normalizeUuid(authContext.userId)) {
       return jsonError(origin, 403, 'Forbidden: registro pertenece a otro usuario');
+    }
+    if (
+      typeof row.organization_id === 'string' &&
+      row.organization_id.trim().length > 0 &&
+      row.organization_id.trim() !== authContext.organizationId
+    ) {
+      return jsonError(origin, 403, 'Forbidden: registro pertenece a otra organización');
     }
 
     const mergeEvidencias = (
@@ -2271,7 +2309,8 @@ Deno.serve(async (req) => {
       const uploadedImages = await uploadEvidenceImagesToDrive(
         accessToken,
         data,
-        finalDriveCfg?.images_folder_id
+        finalDriveCfg?.images_folder_id,
+        supabaseServer
       );
       const driveId = (driveResponse as { id?: string }).id ?? null;
 
@@ -2371,7 +2410,8 @@ Deno.serve(async (req) => {
     const uploadedImages = await uploadEvidenceImagesToDrive(
       accessToken,
       data,
-      finalDriveCfg.images_folder_id
+      finalDriveCfg.images_folder_id,
+      supabaseServer
     );
 
     const driveId = (driveResponse as { id?: string }).id ?? null;
@@ -2431,7 +2471,7 @@ Deno.serve(async (req) => {
           .from('registros_ctpat')
           .update({ sync_status: 'error' })
           .eq('id', registroIdForCleanup)
-          .eq('user_id', currentUserId);
+          .eq('user_id', authContext.userId);
       } catch {
         // No rompemos el endpoint si falla este marcado.
       }

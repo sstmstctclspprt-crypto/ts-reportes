@@ -7,6 +7,8 @@ import {
   isSupabaseGatewayUnauthorized,
   SESSION_EXPIRED_SHORT
 } from '../utils/supabaseAuthErrors';
+import { uploadSensitiveEvidence } from '../services/evidenceStorage';
+import { validateRegistroPayload } from '../utils/registroValidation';
 
 export type SyncKind = 'create_registro_and_generate' | 'generate_pdf';
 
@@ -350,12 +352,16 @@ export const useSyncStore = defineStore('sync', {
       await auth.signOut();
     },
     enqueueCreateRegistroAndGenerate(payload: CreateRegistroAndGeneratePayload) {
+      const safePayload = {
+        ...payload,
+        insertPayloadBase: validateRegistroPayload(payload.insertPayloadBase)
+      };
       const now = new Date().toISOString();
       const id = `create_${payload.userId}_${Date.now()}`;
       const item: SyncItem = {
         id,
         kind: 'create_registro_and_generate',
-        payload,
+        payload: safePayload,
         status: 'pending',
         updatedAt: now
       };
@@ -459,6 +465,44 @@ export const useSyncStore = defineStore('sync', {
               hadSuccess = true;
             } else if (item.kind === 'create_registro_and_generate') {
               const payload = item.payload as CreateRegistroAndGeneratePayload;
+              const organizationId =
+                (session?.user?.app_metadata?.org_id as string | undefined)?.trim() ||
+                payload.userId;
+
+              let safeInsertPayloadBase = validateRegistroPayload(payload.insertPayloadBase);
+              const images = Array.isArray(safeInsertPayloadBase.image_urls)
+                ? safeInsertPayloadBase.image_urls
+                : [];
+              const hasSensitiveInlineData =
+                images.some((v) => typeof v === 'string' && v.startsWith('data:')) ||
+                (typeof safeInsertPayloadBase.firma_operador === 'string' &&
+                  safeInsertPayloadBase.firma_operador.startsWith('data:')) ||
+                (typeof safeInsertPayloadBase.firma_oficial === 'string' &&
+                  safeInsertPayloadBase.firma_oficial.startsWith('data:'));
+
+              if (hasSensitiveInlineData) {
+                const uploaded = await uploadSensitiveEvidence({
+                  userId: payload.userId,
+                  organizationId,
+                  payloadId: item.id,
+                  imageDataUrls: images.filter((v) => typeof v === 'string'),
+                  signatureOperadorDataUrl:
+                    typeof safeInsertPayloadBase.firma_operador === 'string'
+                      ? safeInsertPayloadBase.firma_operador
+                      : undefined,
+                  signatureOficialDataUrl:
+                    typeof safeInsertPayloadBase.firma_oficial === 'string'
+                      ? safeInsertPayloadBase.firma_oficial
+                      : undefined
+                });
+                safeInsertPayloadBase = validateRegistroPayload({
+                  ...safeInsertPayloadBase,
+                  organization_id: organizationId,
+                  image_urls: uploaded.imagePaths,
+                  firma_operador: uploaded.signatureOperadorPath,
+                  firma_oficial: uploaded.signatureOficialPath
+                });
+              }
 
               const { data: folioData, error: folioErr } = await supabase.rpc('next_folio_ctpat', {
                 p_user_id: payload.userId
@@ -477,7 +521,7 @@ export const useSyncStore = defineStore('sync', {
               const folioAuto = folioData as string;
 
               const insertPayload = {
-                ...payload.insertPayloadBase,
+                ...safeInsertPayloadBase,
                 folio_pdf: folioAuto,
                 sync_status: 'pending'
               };

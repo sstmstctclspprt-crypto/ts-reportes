@@ -1,4 +1,4 @@
 # Configuración de Edge Functions (Supabase CLI).
-# La puerta puede devolver 401 aunque el JWT sea válido en algunos casos; la función valida con auth.getUser().
+# Zero Trust: la puerta debe exigir JWT válido y la función mantiene validaciones defensivas adicionales.
 [functions.generate-ctpat-pdf]
-verify_jwt = false
+verify_jwt = true

@@ -577,6 +577,8 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { useSyncStore } from '../stores/syncStore';
+import { uploadSensitiveEvidence } from '../services/evidenceStorage';
+import { validateRegistroPayload } from '../utils/registroValidation';
 import ImagePicker from './ImagePicker.vue';
 
 interface RegistroFormModel {
@@ -1139,6 +1141,10 @@ async function persistRegistro() {
   }
 
   const userId = session?.user?.id ?? authStore.userId ?? null;
+  const organizationId =
+    (session?.user?.app_metadata?.org_id as string | undefined)?.trim() ||
+    userId ||
+    '';
   if (!userId) {
     saving.value = false;
     toastStore.error(
@@ -1162,7 +1168,16 @@ async function persistRegistro() {
 
   // Si no hay internet, guardamos en una cola local para sincronizar después.
   // Importante: el folio automático y el insert a BD se harán cuando vuelva la conexión.
-  const insertPayloadBase = {
+  const evidenceDataUrls = [
+    form.licenciaImagen,
+    form.evidenciaFrontal,
+    form.evidenciaLateral1,
+    form.evidenciaLateral2,
+    form.puertasTraseras,
+    form.evidenciaCajaAbierta
+  ].filter((x) => !!x);
+
+  let insertPayloadBase = {
     service_id: form.numeroTracto.toUpperCase() || null,
     operador: form.operador.toUpperCase(),
     checklist_tracto: {
@@ -1196,21 +1211,64 @@ async function persistRegistro() {
       cajaTrailer: form.inspeccionMecanicaCajaTrailer,
       observaciones: form.inspeccionMecanicaObservaciones
     },
-    image_urls: [
-      form.licenciaImagen,
-      form.evidenciaFrontal,
-      form.evidenciaLateral1,
-      form.evidenciaLateral2,
-      form.puertasTraseras,
-      form.evidenciaCajaAbierta
-    ].filter((x) => !!x),
+    image_urls: evidenceDataUrls,
     firma_operador: form.firmaOperadorDataUrl,
     firma_oficial: form.firmaOficialDataUrl,
     comentarios_tipo: form._comentariosTipo,
     comentarios: form.comentarios,
     evidencias_exif: form.exifPorEvidencia,
-    user_id: userId
+    user_id: userId,
+    organization_id: organizationId
   };
+
+  try {
+    insertPayloadBase = validateRegistroPayload(insertPayloadBase);
+  } catch (e) {
+    saving.value = false;
+    toastStore.error(
+      'Datos inválidos',
+      e instanceof Error ? e.message : 'Revisa el formulario antes de guardar.'
+    );
+    return;
+  }
+
+  if (navigator.onLine) {
+    const payloadId = crypto.randomUUID();
+    try {
+      const uploaded = await uploadSensitiveEvidence({
+        userId,
+        organizationId,
+        payloadId,
+        imageDataUrls: evidenceDataUrls,
+        signatureOperadorDataUrl: form.firmaOperadorDataUrl,
+        signatureOficialDataUrl: form.firmaOficialDataUrl
+      });
+      try {
+        insertPayloadBase = validateRegistroPayload({
+          ...insertPayloadBase,
+          image_urls: uploaded.imagePaths,
+          firma_operador: uploaded.signatureOperadorPath,
+          firma_oficial: uploaded.signatureOficialPath
+        });
+      } catch (validationErr) {
+        saving.value = false;
+        toastStore.error(
+          'Datos inválidos',
+          validationErr instanceof Error
+            ? validationErr.message
+            : 'No se pudo validar el payload antes del guardado.'
+        );
+        return;
+      }
+    } catch (e) {
+      saving.value = false;
+      toastStore.error(
+        'No se pudo guardar evidencia sensible',
+        e instanceof Error ? e.message : 'Error al subir fotos/firmas privadas.'
+      );
+      return;
+    }
+  }
 
   if (!navigator.onLine) {
     try {
