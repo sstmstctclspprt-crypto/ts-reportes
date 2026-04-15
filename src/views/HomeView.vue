@@ -235,6 +235,8 @@ const registros = ref<Array<{
   id: string;
   folio_pdf: string | null;
   created_at: string;
+  sync_status: string | null;
+  drive_file_id: string | null;
   checklist_tracto: Record<string, unknown> | null;
 }>>([]);
 const loadingRegistros = ref(false);
@@ -350,7 +352,7 @@ async function loadRegistros() {
   }
   const { data, error } = await supabase
     .from('registros_ctpat')
-    .select('id, folio_pdf, created_at, checklist_tracto')
+    .select('id, folio_pdf, created_at, sync_status, drive_file_id, checklist_tracto')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
@@ -362,6 +364,22 @@ async function loadRegistros() {
     registros.value = [];
   } else {
     registros.value = data ?? [];
+    // Rehidrata la cola desde BD para registros que existen pero aún no se han subido a Drive.
+    // Esto evita falsos "Sincronización al día" después de recargas o cambios de dispositivo.
+    const pendingDriveSync = (data ?? []).filter(
+      (r) => r.sync_status !== 'synced' || !r.drive_file_id
+    );
+    for (const row of pendingDriveSync) {
+      if (row?.id) {
+        syncStore.enqueueGeneratePdf({
+          registroId: row.id,
+          folio: row.folio_pdf ?? undefined
+        });
+      }
+    }
+    if (pendingDriveSync.length > 0) {
+      void syncStore.processQueue();
+    }
   }
   loadingRegistros.value = false;
 }
