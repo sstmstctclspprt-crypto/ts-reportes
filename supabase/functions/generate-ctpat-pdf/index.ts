@@ -724,26 +724,15 @@ async function buildPdf(
   }
 
   const logoRight = await loadImage('oea.jpeg'); // siempre lado derecho
-  // Marca de agua:
-  // 1) `log.png` (preferido), 2) `logo.png`, 3) logo del centro, 4) logos laterales.
-  // Con esto evitamos PDFs sin fondo si falta el archivo principal en Storage.
-  const logoWatermark =
-    (await loadImage('log.png')) ??
-    (await loadImage('logo.png')) ??
-    logoCenter ??
-    logoLeft ??
-    logoRight; // fondo de cada página
+  // Marca de agua: SIEMPRE `logo.png`, centrado en cada página (sin rotación).
+  const logoWatermark = await loadImage('logo.png'); // fondo de cada página
   if (!logoWatermark) {
-    console.error(
-      '[generate-ctpat-pdf] Failed to load watermark image (log.png/logo.png/service logos)'
-    );
+    console.error('[generate-ctpat-pdf] Failed to load watermark image logo.png');
   }
 
   /** Marca de agua tipo sello: visible pero sin tapar el contenido. */
   const WATERMARK_MAX_PAGE_FRACTION = 0.82;
   const WATERMARK_OPACITY = 0.45;
-  /** Rotación ligera (pdf-lib rota alrededor de la esquina inferior izquierda de la imagen). */
-  const WATERMARK_ROTATE_DEG = -15;
 
   /**
    * Fondo de agua uniforme en todas las páginas:
@@ -764,23 +753,17 @@ async function buildPdf(
     const wmW = naturalW * scale;
     const wmH = naturalH * scale;
 
-    const rad = (WATERMARK_ROTATE_DEG * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const cx = pageW / 2;
-    const cy = pageH / 2;
-    // Centro de la imagen tras rotar alrededor de (x,y) = (x,y) + R*(w/2,h/2)
-    const x = cx - (wmW / 2) * cos + (wmH / 2) * sin;
-    const y = cy - (wmW / 2) * sin - (wmH / 2) * cos;
+  // Centrado exacto (sin rotación).
+  const x = (pageW - wmW) / 2;
+  const y = (pageH - wmH) / 2;
 
-    page.drawImage(logoWatermark, {
-      x,
-      y,
-      width: wmW,
-      height: wmH,
-      rotate: degrees(WATERMARK_ROTATE_DEG),
-      opacity: WATERMARK_OPACITY
-    });
+  page.drawImage(logoWatermark, {
+    x,
+    y,
+    width: wmW,
+    height: wmH,
+    opacity: WATERMARK_OPACITY
+  });
   }
 
   const page1 = pdfDoc.addPage([595.28, 841.89]); // A4
