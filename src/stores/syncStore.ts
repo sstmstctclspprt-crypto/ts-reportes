@@ -173,10 +173,11 @@ async function invokeGenerateCtpatPdf(
 }
 
 function shouldInvalidateLocalSession(message: string): boolean {
+  // Mantener sesión local salvo errores reales de autenticación Supabase.
+  // Errores de Drive/OAuth de Google deben manejarse con reconexión, no con signOut forzado.
   if (isSessionExpiredError(message)) return true;
   const m = message.toLowerCase();
   return (
-    (m.includes('no hay sesión') && m.includes('google')) ||
     (m.includes('jwt') && m.includes('refresh')) ||
     m.includes('invalid refresh token')
   );
