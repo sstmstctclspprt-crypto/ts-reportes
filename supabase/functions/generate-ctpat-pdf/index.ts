@@ -731,8 +731,8 @@ async function buildPdf(
   }
 
   /** Marca de agua tipo sello: visible pero sin tapar el contenido. */
-  const WATERMARK_MAX_PAGE_FRACTION = 0.82;
-  const WATERMARK_OPACITY = 0.45;
+  const WATERMARK_MAX_PAGE_FRACTION = 0.95;
+  const WATERMARK_OPACITY = 1;
 
   /**
    * Fondo de agua uniforme en todas las páginas:
