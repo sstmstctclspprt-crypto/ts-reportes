@@ -724,15 +724,24 @@ async function buildPdf(
   }
 
   const logoRight = await loadImage('oea.jpeg'); // siempre lado derecho
-  // Marca de agua: prioridad a `log.png` (como lo piden en operación), fallback a `logo.png`.
-  const logoWatermark = (await loadImage('log.png')) ?? (await loadImage('logo.png')); // fondo de cada página
+  // Marca de agua:
+  // 1) `log.png` (preferido), 2) `logo.png`, 3) logo del centro, 4) logos laterales.
+  // Con esto evitamos PDFs sin fondo si falta el archivo principal en Storage.
+  const logoWatermark =
+    (await loadImage('log.png')) ??
+    (await loadImage('logo.png')) ??
+    logoCenter ??
+    logoLeft ??
+    logoRight; // fondo de cada página
   if (!logoWatermark) {
-    console.error('[generate-ctpat-pdf] Failed to load watermark image (log.png/logo.png)');
+    console.error(
+      '[generate-ctpat-pdf] Failed to load watermark image (log.png/logo.png/service logos)'
+    );
   }
 
   /** Marca de agua tipo sello: visible pero sin tapar el contenido. */
-  const WATERMARK_MAX_PAGE_FRACTION = 0.78;
-  const WATERMARK_OPACITY = 0.16;
+  const WATERMARK_MAX_PAGE_FRACTION = 0.82;
+  const WATERMARK_OPACITY = 0.45;
   /** Rotación ligera (pdf-lib rota alrededor de la esquina inferior izquierda de la imagen). */
   const WATERMARK_ROTATE_DEG = -15;
 
