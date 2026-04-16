@@ -10,7 +10,7 @@ Los logos del encabezado y el fondo se cargan por **URL** para que funcionen en 
    - `ctpat.png` (izquierda)
    - `caterpillar.png` (centro, por defecto)
    - `oea.jpeg` (derecha)
-   - `logo.png` (fondo de página)
+   - `logo.png` (marca de agua / sello corporativo centrado en **cada página** del PDF; debe ser el logo que quieras como fondo)
    - `caja.jpg` (diagrama de puntos de verificación en página 2)
    - Opcionales: `komatsu.png`, `john_deere.png` si usas otros servicios.
 4. Asegúrate de que el bucket sea **público** (Policy: permitir lectura pública).

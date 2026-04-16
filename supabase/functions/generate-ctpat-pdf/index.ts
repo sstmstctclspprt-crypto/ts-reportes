@@ -728,17 +728,23 @@ async function buildPdf(
     console.error('[generate-ctpat-pdf] Failed to load logo.png for watermark');
   }
 
+  /** Marca de agua tipo sello: visible pero sin tapar el contenido. */
+  const WATERMARK_MAX_PAGE_FRACTION = 0.62;
+  const WATERMARK_OPACITY = 0.1;
+  /** Rotación ligera (pdf-lib rota alrededor de la esquina inferior izquierda de la imagen). */
+  const WATERMARK_ROTATE_DEG = -15;
+
   /**
    * Fondo de agua uniforme en todas las páginas:
-   * - Centrado exacto
-   * - Misma escala relativa para cualquier tamaño de hoja
+   * - Centrado visual (compensa rotación alrededor de bottom-left)
+   * - Escala relativa al tamaño de hoja
    * - Conserva proporción del logo
    */
   function drawCenteredWatermark(page: PDFPage) {
     if (!logoWatermark) return;
     const { width: pageW, height: pageH } = page.getSize();
-    const maxW = pageW * 0.58;
-    const maxH = pageH * 0.58;
+    const maxW = pageW * WATERMARK_MAX_PAGE_FRACTION;
+    const maxH = pageH * WATERMARK_MAX_PAGE_FRACTION;
     const naturalW = logoWatermark.width;
     const naturalH = logoWatermark.height;
     if (!naturalW || !naturalH) return;
@@ -747,12 +753,22 @@ async function buildPdf(
     const wmW = naturalW * scale;
     const wmH = naturalH * scale;
 
+    const rad = (WATERMARK_ROTATE_DEG * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const cx = pageW / 2;
+    const cy = pageH / 2;
+    // Centro de la imagen tras rotar alrededor de (x,y) = (x,y) + R*(w/2,h/2)
+    const x = cx - (wmW / 2) * cos + (wmH / 2) * sin;
+    const y = cy - (wmW / 2) * sin - (wmH / 2) * cos;
+
     page.drawImage(logoWatermark, {
-      x: pageW / 2 - wmW / 2,
-      y: pageH / 2 - wmH / 2,
+      x,
+      y,
       width: wmW,
       height: wmH,
-      opacity: 0.05
+      rotate: degrees(WATERMARK_ROTATE_DEG),
+      opacity: WATERMARK_OPACITY
     });
   }
 
