@@ -72,7 +72,8 @@ function logoFromUserMetadata(meta: Record<string, unknown> | undefined): string
 
 /**
  * Valida el JWT con Auth (GET /user) como segunda barrera defensiva.
- * La puerta de Edge también exige JWT (`verify_jwt=true`).
+ * La puerta de Edge no fuerza JWT (`verify_jwt=false`) para no bloquear preflight;
+ * por eso esta validación es obligatoria aquí.
  */
 async function resolveAuthContextFromAuthorization(
   authorizationHeader: string | null
@@ -723,14 +724,15 @@ async function buildPdf(
   }
 
   const logoRight = await loadImage('oea.jpeg'); // siempre lado derecho
-  const logoWatermark = await loadImage('logo.png'); // fondo de cada página
+  // Marca de agua: prioridad a `log.png` (como lo piden en operación), fallback a `logo.png`.
+  const logoWatermark = (await loadImage('log.png')) ?? (await loadImage('logo.png')); // fondo de cada página
   if (!logoWatermark) {
-    console.error('[generate-ctpat-pdf] Failed to load logo.png for watermark');
+    console.error('[generate-ctpat-pdf] Failed to load watermark image (log.png/logo.png)');
   }
 
   /** Marca de agua tipo sello: visible pero sin tapar el contenido. */
-  const WATERMARK_MAX_PAGE_FRACTION = 0.62;
-  const WATERMARK_OPACITY = 0.1;
+  const WATERMARK_MAX_PAGE_FRACTION = 0.78;
+  const WATERMARK_OPACITY = 0.16;
   /** Rotación ligera (pdf-lib rota alrededor de la esquina inferior izquierda de la imagen). */
   const WATERMARK_ROTATE_DEG = -15;
 

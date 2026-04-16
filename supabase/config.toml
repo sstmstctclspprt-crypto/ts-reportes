@@ -1,4 +1,5 @@
 # Configuración de Edge Functions (Supabase CLI).
-# Zero Trust: la puerta debe exigir JWT válido y la función mantiene validaciones defensivas adicionales.
+# La función valida Authorization de forma explícita; dejamos verify_jwt desactivado
+# para evitar bloqueos de preflight/CORS en navegador.
 [functions.generate-ctpat-pdf]
-verify_jwt = true
+verify_jwt = false
