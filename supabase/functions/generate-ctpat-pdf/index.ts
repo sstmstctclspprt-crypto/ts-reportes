@@ -678,6 +678,66 @@ async function buildPdf(
     }
   }
 
+  /**
+   * Carga estricta de marca de agua `logo.png`.
+   * Prioridad: URL pública exacta del bucket -> storage.download -> assets locales.
+   */
+  async function loadWatermarkLogo() {
+    const lower = 'logo.png';
+    const tryEmbed = async (bytes: Uint8Array) => {
+      return await pdfDoc.embedPng(bytes).catch(() => pdfDoc.embedJpg(bytes));
+    };
+
+    // 1) URL pública exacta (evita ambigüedad de rutas/folders)
+    if (SUPABASE_URL) {
+      const exactPublicUrl = `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${LOGO_BUCKET}/${lower}`;
+      try {
+        const res = await fetch(exactPublicUrl, { method: 'GET' });
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          return await tryEmbed(new Uint8Array(buf));
+        }
+        console.warn('[generate-ctpat-pdf] watermark public URL fetch failed', {
+          url: exactPublicUrl,
+          status: res.status
+        });
+      } catch (e) {
+        console.warn('[generate-ctpat-pdf] watermark public URL error', e);
+      }
+    }
+
+    // 2) Descarga directa con service role
+    if (supabaseStorage) {
+      try {
+        const { data: blob, error: dlErr } = await supabaseStorage.storage.from(LOGO_BUCKET).download(lower);
+        if (!dlErr && blob) {
+          const buf = await blob.arrayBuffer();
+          return await tryEmbed(new Uint8Array(buf));
+        }
+        if (dlErr) {
+          console.warn('[generate-ctpat-pdf] watermark storage.download failed', dlErr.message);
+        }
+      } catch (e) {
+        console.warn('[generate-ctpat-pdf] watermark storage.download error', e);
+      }
+    }
+
+    // 3) Assets locales
+    try {
+      const url = new URL(`./assets/${lower}`, import.meta.url);
+      const data = await Deno.readFile(url);
+      return await tryEmbed(data);
+    } catch {
+      try {
+        const data = await Deno.readFile(`${Deno.cwd()}/assets/${lower}`);
+        return await tryEmbed(data);
+      } catch (e) {
+        console.warn('[generate-ctpat-pdf] watermark local file failed', e);
+        return null;
+      }
+    }
+  }
+
   const logoLeft = await loadImage('ctpat.png'); // siempre lado izquierdo
 
   // Logo de la empresa en el centro:
@@ -725,7 +785,7 @@ async function buildPdf(
 
   const logoRight = await loadImage('oea.jpeg'); // siempre lado derecho
   // Marca de agua: SIEMPRE `logo.png`, centrado en cada página (sin rotación).
-  const logoWatermark = await loadImage('logo.png'); // fondo de cada página
+  const logoWatermark = await loadWatermarkLogo(); // fondo de cada página
   if (!logoWatermark) {
     console.error('[generate-ctpat-pdf] Failed to load watermark image logo.png');
   }
