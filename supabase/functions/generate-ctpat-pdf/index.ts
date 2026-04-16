@@ -770,8 +770,6 @@ async function buildPdf(
   const { width, height } = page1.getSize();
   const mechHabilitadaGlobal = ((registro.inspeccion_mecanica as any)?.habilitada ?? false) === true;
 
-  drawCenteredWatermark(page1);
-
   // Encabezado pegado al borde superior (margen mínimo)
   const topMargin = 8;
   let cursorY = height - topMargin;
@@ -1285,12 +1283,11 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
+  drawCenteredWatermark(page1);
 
   // ========== PÁGINA 2: Cheklist Inspección Agrícola + Puntos de verificación del tracto ==========
   const page2 = pdfDoc.addPage([595.28, 841.89]);
   const height2 = page2.getSize().height;
-  drawCenteredWatermark(page2);
-
   const secH2 = 18;
   let cy = height2 - 36;
 
@@ -1483,14 +1480,13 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
+  drawCenteredWatermark(page2);
 
   // ========== PÁGINA 3: Inspección mecánica, evidencias y firmas ==========
   // Si el checklist mecánico NO está habilitado, ignoramos completamente la hoja 3.
   if (mechHabilitadaGlobal) {
     const page3 = pdfDoc.addPage([595.28, 841.89]);
     const height3 = page3.getSize().height;
-    drawCenteredWatermark(page3);
-
   let cy3 = height3 - 40;
   // Folio en la esquina superior derecha (mismo folio en todas las páginas).
   if (folioText) {
@@ -1942,14 +1938,13 @@ async function buildPdf(
         font: fontRegular,
         color: rgb(0.4, 0.4, 0.4)
       });
+      drawCenteredWatermark(page3);
     }
   }
 
   // ========== PÁGINA 4: EVIDENCIAS FOTOGRÁFICAS ==========
   const page4 = pdfDoc.addPage([595.28, 841.89]);
   const height4 = page4.getSize().height;
-
-  drawCenteredWatermark(page4);
 
   const marginP4 = 32;
   let yP4 = height4 - marginP4;
@@ -2092,6 +2087,7 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
+  drawCenteredWatermark(page4);
 
   return await pdfDoc.save();
 }
