@@ -1,8 +1,8 @@
 /**
  * Detecta errores de Supabase/PostgREST/GoTrue que requieren volver a iniciar sesión.
  *
- * Importante: NO usar "invalid token" suelto: Google Drive devuelve frases parecidas cuando falla
- * el OAuth de Drive, y eso NO debe cerrar la sesión de Supabase ni borrar el registro ya guardado.
+ * Importante: NO usar "invalid token" suelto: algunas APIs externas devuelven frases parecidas
+ * y eso NO debe cerrar la sesión de Supabase ni borrar el registro ya guardado.
  */
 export function isSessionExpiredError(
   message: string | null | undefined,
@@ -27,7 +27,7 @@ export function isSessionExpiredError(
 
 /**
  * Solo para reintento de Edge Function con otro JWT Supabase (no cerrar sesión).
- * Más estricto que errores de Drive mezclados en el mismo mensaje.
+ * Más estricto que errores de Graph mezclados en el mismo mensaje.
  */
 export function isSupabaseGatewayUnauthorized(message: string | null | undefined): boolean {
   const m = (message ?? '').toLowerCase();
@@ -41,23 +41,28 @@ export function isSupabaseGatewayUnauthorized(message: string | null | undefined
 /** Texto para toasts (sin códigos HTTP). */
 export const SESSION_EXPIRED = {
   title: 'Sesión finalizada',
-  message:
-    'Por seguridad hay que volver a entrar. Usa «Iniciar con Google» en la parte superior.'
+  message: 'Por seguridad hay que volver a entrar. Usa el botón de inicio de sesión en la parte superior.'
 } as const;
 
 /** Mensaje breve para cola de sincronización / historial de errores. */
-export const SESSION_EXPIRED_SHORT = 'Sesión finalizada. Inicia sesión de nuevo con Google.';
+export const SESSION_EXPIRED_SHORT = 'Sesión finalizada. Vuelve a iniciar sesión.';
 
 /**
- * Errores de OAuth/permisos de Google Drive (Edge Function o mensajes propagados).
+ * Errores de Microsoft Graph / SharePoint (Edge Function o mensajes propagados).
  * No confundir con JWT de Supabase: no debe disparar cierre de sesión Supabase.
  */
-export function isGoogleDriveAccessError(message: string | null | undefined): boolean {
+export function isMicrosoftGraphAccessError(message: string | null | undefined): boolean {
   const m = (message ?? '').toLowerCase();
   if (!m.trim()) return false;
-  if (m.includes('el acceso a google drive expiró')) return true;
-  if (m.includes('google drive rechazó')) return true;
-  if (m.includes('se requiere acceso a google drive')) return true;
-  if (m.includes('google drive (')) return true;
+  if (m.includes('microsoft graph')) return true;
+  if (m.includes('sharepoint')) return true;
+  if (m.includes('sites.selected')) return true;
+  if (m.includes('azure_tenant_id') || m.includes('azure_client')) return true;
+  if (m.includes('graph (')) return true;
   return false;
+}
+
+/** @deprecated Errores de Google Drive ya no aplican; mantenido por compatibilidad de texto. */
+export function isGoogleDriveAccessError(message: string | null | undefined): boolean {
+  return isMicrosoftGraphAccessError(message);
 }

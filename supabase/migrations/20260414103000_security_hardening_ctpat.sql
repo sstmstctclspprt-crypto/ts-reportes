@@ -62,6 +62,10 @@ drop policy if exists "Usuarios ven sólo sus registros" on public.registros_ctp
 drop policy if exists "Usuarios insertan sus registros" on public.registros_ctpat;
 drop policy if exists "Usuarios actualizan sus registros" on public.registros_ctpat;
 drop policy if exists "Usuarios borran sus registros" on public.registros_ctpat;
+drop policy if exists "Usuarios ven registros de su organizacion" on public.registros_ctpat;
+drop policy if exists "Usuarios insertan registros de su organizacion" on public.registros_ctpat;
+drop policy if exists "Usuarios actualizan registros propios de su organizacion" on public.registros_ctpat;
+drop policy if exists "Usuarios eliminan registros propios de su organizacion" on public.registros_ctpat;
 
 create policy "Usuarios ven registros de su organizacion"
   on public.registros_ctpat

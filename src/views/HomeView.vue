@@ -95,14 +95,6 @@
             Reintentar ({{ erroredSyncCount }})
           </button>
           <button
-            v-if="needsGoogleReconnect"
-            type="button"
-            class="text-xs text-amber-700 font-semibold hover:underline"
-            @click="reconnectGoogle"
-          >
-            Reconectar Google
-          </button>
-          <button
             v-if="erroredSyncCount > 0"
             type="button"
             class="text-xs text-rose-700 font-semibold hover:underline"
@@ -213,7 +205,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { supabase } from '../supabaseClient';
-import { isGoogleDriveAccessError, isSessionExpiredError } from '../utils/supabaseAuthErrors';
+import { isSessionExpiredError } from '../utils/supabaseAuthErrors';
 import { getServiceLogoPublicUrl } from '../utils/serviceLogoUrl';
 import {
   clearRegistroCameraBlockedHint,
@@ -281,7 +273,6 @@ const syncErrorMessage = computed(() => {
   )[0];
   return latest?.lastError ?? '';
 });
-const needsGoogleReconnect = computed(() => isGoogleDriveAccessError(syncErrorMessage.value));
 const syncStatusText = computed(() => {
   if (syncStore.connectivity === 'offline') return 'Sin conexión';
   if (syncStore.syncing) return 'Sincronizando…';
@@ -364,12 +355,12 @@ async function loadRegistros() {
     registros.value = [];
   } else {
     registros.value = data ?? [];
-    // Rehidrata la cola desde BD para registros que existen pero aún no se han subido a Drive.
+    // Rehidrata la cola desde BD para registros que existen pero aún no se han subido a SharePoint.
     // Esto evita falsos "Sincronización al día" después de recargas o cambios de dispositivo.
-    const pendingDriveSync = (data ?? []).filter(
+    const pendingSharePointSync = (data ?? []).filter(
       (r) => r.sync_status !== 'synced' || !r.drive_file_id
     );
-    for (const row of pendingDriveSync) {
+    for (const row of pendingSharePointSync) {
       if (row?.id) {
         syncStore.enqueueGeneratePdf({
           registroId: row.id,
@@ -377,7 +368,7 @@ async function loadRegistros() {
         });
       }
     }
-    if (pendingDriveSync.length > 0) {
+    if (pendingSharePointSync.length > 0) {
       void syncStore.processQueue();
     }
   }
@@ -426,10 +417,6 @@ async function onPickLogo(event: Event) {
 
 function retrySyncErrors() {
   void syncStore.retryErroredItems();
-}
-
-function reconnectGoogle() {
-  void authStore.signInWithGoogle();
 }
 
 async function clearSyncErrors() {

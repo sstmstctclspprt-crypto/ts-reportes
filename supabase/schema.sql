@@ -17,16 +17,20 @@
     sync_status text not null default 'pending',
     pdf_storage_path text,
     drive_file_id text,
+    sharepoint_folder_seq bigint,
     user_id uuid references auth.users (id) on delete set null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   );
 
-  -- Configuración por usuario para carpetas de Google Drive
+  alter table public.registros_ctpat
+    add column if not exists sharepoint_folder_seq bigint;
+
+  -- Preferencia de logo por usuario (carpetas Google Drive deprecadas; SharePoint vía Graph)
   create table if not exists public.user_drive_config (
     user_id uuid primary key references auth.users (id) on delete cascade,
-    pdf_folder_id text not null,
-    images_folder_id text not null,
+    pdf_folder_id text,
+    images_folder_id text,
     created_at timestamptz not null default now()
   );
 
@@ -36,6 +40,9 @@
 -- Ejemplos: caterpillar.png, komatsu.png, john_deere.png
 alter table public.user_drive_config
   add column if not exists service_logo_file text not null default 'caterpillar.png';
+
+alter table public.user_drive_config
+  add column if not exists sharepoint_report_seq bigint not null default 0;
 
   drop policy if exists "Usuarios ven su propia config Drive" on public.user_drive_config;
   create policy "Usuarios ven su propia config Drive"
@@ -103,6 +110,28 @@ alter table public.user_drive_config
     return format('TS-%s', new_val::text);
   end;
   $$ language plpgsql;
+
+  create or replace function public.next_sharepoint_report_seq(p_user_id uuid)
+  returns bigint
+  language plpgsql
+  security definer
+  set search_path = public
+  as $$
+  declare
+    v_seq bigint;
+  begin
+    insert into public.user_drive_config (user_id, sharepoint_report_seq)
+    values (p_user_id, 1)
+    on conflict (user_id) do update
+      set sharepoint_report_seq = user_drive_config.sharepoint_report_seq + 1
+    returning sharepoint_report_seq into v_seq;
+
+    return v_seq;
+  end;
+  $$;
+
+  revoke all on function public.next_sharepoint_report_seq(uuid) from public;
+  grant execute on function public.next_sharepoint_report_seq(uuid) to service_role;
 
   alter table public.registros_ctpat enable row level security;
 
@@ -220,6 +249,10 @@ alter table public.user_drive_config
   drop policy if exists "Usuarios insertan sus registros" on public.registros_ctpat;
   drop policy if exists "Usuarios actualizan sus registros" on public.registros_ctpat;
   drop policy if exists "Usuarios borran sus registros" on public.registros_ctpat;
+  drop policy if exists "Usuarios ven registros de su organizacion" on public.registros_ctpat;
+  drop policy if exists "Usuarios insertan registros de su organizacion" on public.registros_ctpat;
+  drop policy if exists "Usuarios actualizan registros propios de su organizacion" on public.registros_ctpat;
+  drop policy if exists "Usuarios eliminan registros propios de su organizacion" on public.registros_ctpat;
 
   create policy "Usuarios ven registros de su organizacion"
     on public.registros_ctpat

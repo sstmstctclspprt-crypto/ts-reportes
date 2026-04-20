@@ -771,7 +771,7 @@ const operadorPad = ref<InstanceType<typeof VueSignaturePad> | null>(null);
 const oficialPad = ref<InstanceType<typeof VueSignaturePad> | null>(null);
 
 const saving = ref(false);
-/** Panel tras guardar: sincronización con Drive / PDF */
+/** Panel tras guardar: sincronización con SharePoint / PDF */
 const saveSyncPhase = ref<'idle' | 'saving' | 'syncing' | 'success' | 'error'>('idle');
 const saveSyncDetail = ref('');
 const lastSavedFolio = ref('');
@@ -781,7 +781,7 @@ const saveSyncPanelTitle = computed(() => {
     case 'saving':
       return 'Guardando registro en el servidor…';
     case 'syncing':
-      return 'Sincronizando PDF con Google Drive…';
+      return 'Sincronizando PDF con SharePoint…';
     case 'success':
       return 'Listo: registro y PDF sincronizados correctamente.';
     case 'error':
@@ -1128,7 +1128,7 @@ async function persistRegistro() {
       saving.value = false;
       toastStore.error(
         SESSION_EXPIRED.title,
-        'No se pudo validar la sesión. Comprueba la conexión o vuelve a entrar con Google.'
+        'No se pudo validar la sesión. Comprueba la conexión o vuelve a iniciar sesión.'
       );
       return;
     }
@@ -1149,7 +1149,7 @@ async function persistRegistro() {
     saving.value = false;
     toastStore.error(
       'No se pudo guardar',
-      'No hay sesión activa para guardar offline. Inicia sesión con Google una vez con internet.'
+      'No hay sesión activa para guardar offline. Inicia sesión una vez con internet.'
     );
     return;
   }

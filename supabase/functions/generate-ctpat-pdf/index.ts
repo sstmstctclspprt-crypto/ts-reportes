@@ -2,10 +2,17 @@
 // Deno / TypeScript
 // 1. Recupera el registro de la base de datos
 // 2. Genera un PDF de 4 páginas (estructura basada en PdfService original)
-// 3. Sube el PDF a Google Drive usando el acceso de Google del usuario (OAuth)
+// 3. Sube solo el PDF a SharePoint vía Microsoft Graph (app-only). Las evidencias van embebidas en el PDF.
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import {
+  ensureFolderPath,
+  getDefaultDocumentLibraryDriveId,
+  getGraphAppAccessToken,
+  uploadFileToFolder,
+  userPdfFolderSegments
+} from './graphSharePoint.ts';
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage, PDFImage, degrees } from 'npm:pdf-lib@1.17.1';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -25,6 +32,8 @@ interface RegistroRow {
   folio_pdf: string | null;
   pdf_storage_path: string | null;
   drive_file_id: string | null;
+  /** Carpeta TS-REPORTES Sn asignada a este registro (reintentos sin nuevo n). */
+  sharepoint_folder_seq: number | null;
   operador: string | null;
   checklist_tracto: Record<string, unknown> | null;
   checklist_caja: Record<string, unknown> | null;
@@ -39,10 +48,19 @@ interface RegistroRow {
 }
 
 interface UserDriveConfigRow {
-  pdf_folder_id: string;
-  images_folder_id: string;
+  /** Deprecado (Google Drive); SharePoint usa rutas por usuario en Graph. */
+  pdf_folder_id: string | null;
+  images_folder_id: string | null;
   service_logo_file: string | null;
 }
+
+type SupabaseForStorage = {
+  storage: {
+    from: (bucket: string) => {
+      download: (path: string) => Promise<{ data: Blob | null; error: Error | null }>;
+    };
+  };
+};
 
 /** Alineado con la PWA (authStore): metadata → nombre de archivo en Storage */
 function normalizeServiceLogoFile(v: string | null | undefined): string {
@@ -110,264 +128,95 @@ async function resolveAuthContextFromAuthorization(
   return null;
 }
 
-const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
-const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-const ROOT_FOLDER_NAME = 'TS REPORTES';
-const PDF_FOLDER_NAME = 'PDFs';
-const IMAGES_FOLDER_NAME = 'Evidencias';
+async function ensureUserLogoRow(
+  supabaseServer: ReturnType<typeof createClient>,
+  userId: string,
+  userMeta: Record<string, unknown> | undefined
+): Promise<UserDriveConfigRow> {
+  const { data: existing } = await supabaseServer
+    .from('user_drive_config')
+    .select('pdf_folder_id, images_folder_id, service_logo_file')
+    .eq('user_id', userId)
+    .maybeSingle<UserDriveConfigRow>();
 
-const DRIVE_MAX_ATTEMPTS = 4;
-const DRIVE_RETRY_BASE_MS = 400;
+  if (existing) return existing;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+  const logo = normalizeServiceLogoFile(logoFromUserMetadata(userMeta));
+  const { data: inserted, error: insertErr } = await supabaseServer
+    .from('user_drive_config')
+    .insert({
+      user_id: userId,
+      pdf_folder_id: null,
+      images_folder_id: null,
+      service_logo_file: logo
+    })
+    .select('pdf_folder_id, images_folder_id, service_logo_file')
+    .single<UserDriveConfigRow>();
 
-/** Rate limit / servidor / timeout: reintentar. 401/403: no (token o permisos). */
-function driveStatusRetryable(status: number): boolean {
-  return status === 408 || status === 429 || (status >= 500 && status <= 504);
-}
+  if (!insertErr && inserted) return inserted;
 
-async function driveErrorDetail(res: Response): Promise<string> {
-  const t = await res.text();
-  try {
-    const j = JSON.parse(t) as {
-      error?: { message?: string; errors?: { message?: string }[] };
-    };
-    return j.error?.message ?? j.error?.errors?.[0]?.message ?? t;
-  } catch {
-    return t;
-  }
-}
-
-/**
- * Peticiones a Google Drive con reintentos en fallos transitorios.
- * 401/403: mensaje claro (OAuth de Google, no sesión Supabase).
- */
-async function driveFetch(
-  accessToken: string,
-  url: string,
-  init: RequestInit
-): Promise<Response> {
-  const headers = new Headers(init.headers as HeadersInit);
-  headers.set('Authorization', `Bearer ${accessToken}`);
-
-  let lastNonRetryable = '';
-
-  for (let attempt = 0; attempt < DRIVE_MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(url, {
-        ...init,
-        headers
-      });
-
-      if (res.ok) return res;
-
-      const detail = await driveErrorDetail(res);
-
-      if (res.status === 401) {
-        throw new Error(
-          'El acceso a Google Drive expiró o el token no es válido. Vuelve a iniciar sesión con Google en la app y acepta los permisos de Drive.'
-        );
-      }
-      if (res.status === 403) {
-        throw new Error(
-          'Google Drive rechazó la operación (permisos). Revisa la cuenta o vuelve a conectar la app con Google.'
-        );
-      }
-
-      if (!driveStatusRetryable(res.status) || attempt === DRIVE_MAX_ATTEMPTS - 1) {
-        lastNonRetryable = `Google Drive (${res.status}): ${detail.slice(0, 600)}`;
-        throw new Error(lastNonRetryable);
-      }
-
-      await sleep(DRIVE_RETRY_BASE_MS * Math.pow(2, attempt));
-    } catch (e) {
-      if (e instanceof Error && e.message.startsWith('El acceso a Google Drive')) throw e;
-      if (e instanceof Error && e.message.startsWith('Google Drive rechazó')) throw e;
-      if (e instanceof Error && e.message.startsWith('Google Drive (')) throw e;
-
-      const isLast = attempt === DRIVE_MAX_ATTEMPTS - 1;
-      if (isLast) {
-        throw new Error(
-          `No se pudo conectar con Google Drive tras varios intentos: ${e instanceof Error ? e.message : String(e)}`
-        );
-      }
-      await sleep(DRIVE_RETRY_BASE_MS * Math.pow(2, attempt));
-    }
-  }
-
-  throw new Error(lastNonRetryable || 'Error desconocido en Google Drive');
-}
-
-async function uploadToDrive(
-  accessToken: string,
-  fileName: string,
-  bytes: Uint8Array,
-  mimeType: string,
-  folderId?: string
-) {
-  const metadata: Record<string, unknown> = {
-    name: fileName,
-    mimeType
+  return {
+    pdf_folder_id: null,
+    images_folder_id: null,
+    service_logo_file: logo
   };
-  if (folderId) {
-    metadata.parents = [folderId];
-  }
-
-  const boundary = '-------314159265358979323846';
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
-  const encoder = new TextEncoder();
-
-  const part1 = encoder.encode(
-    delimiter +
-      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-      JSON.stringify(metadata)
-  );
-  const part2Header = encoder.encode(
-    delimiter + `Content-Type: ${mimeType}\r\n\r\n`
-  );
-  const part3 = encoder.encode(closeDelimiter);
-
-  const totalLength = part1.length + part2Header.length + bytes.length + part3.length;
-  const multipartBody = new Uint8Array(totalLength);
-  let offset = 0;
-  multipartBody.set(part1, offset);
-  offset += part1.length;
-  multipartBody.set(part2Header, offset);
-  offset += part2Header.length;
-  multipartBody.set(bytes, offset);
-  offset += bytes.length;
-  multipartBody.set(part3, offset);
-
-  const res = await driveFetch(accessToken, DRIVE_UPLOAD_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': `multipart/related; boundary=${boundary}`
-    },
-    body: multipartBody
-  });
-
-  return res.json();
 }
 
-async function findFolderId(
-  accessToken: string,
-  name: string,
-  parentId?: string
-): Promise<string | null> {
-  // Busca carpetas por nombre y parent (o root).
-  // mimeType debe ser el de folder de Google Drive.
-  const qParts: string[] = [
-    `name='${name.replace(/'/g, "\\'")}'`,
-    "mimeType='application/vnd.google-apps.folder'",
-    'trashed=false'
-  ];
-  if (parentId) {
-    qParts.push(`'${parentId}' in parents`);
-  } else {
-    qParts.push("'root' in parents");
-  }
-
-  const q = qParts.join(' and ');
-  const res = await driveFetch(
-    accessToken,
-    `${DRIVE_FILES_URL}?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=5`,
-    { method: 'GET' }
-  );
-
-  const data = (await res.json()) as { files?: { id: string; name: string }[] };
-  const first = data.files?.[0]?.id;
-  return first ?? null;
-}
-
-async function createFolder(
-  accessToken: string,
-  name: string,
-  parentId?: string
-): Promise<string> {
-  const body: Record<string, unknown> = {
-    name,
-    mimeType: 'application/vnd.google-apps.folder'
-  };
-  if (parentId) {
-    body.parents = [parentId];
-  } else {
-    body.parents = ['root'];
-  }
-
-  const res = await driveFetch(accessToken, DRIVE_FILES_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
-
-  const data = (await res.json()) as { id: string };
-  return data.id;
-}
-
-async function ensureDriveFolders(accessToken: string): Promise<{ pdfFolderId: string; imagesFolderId: string }> {
-  const rootId = (await findFolderId(accessToken, ROOT_FOLDER_NAME)) ?? (await createFolder(accessToken, ROOT_FOLDER_NAME));
-
-  const [pdfFolderId, imagesFolderId] = await Promise.all([
-    (async () => {
-      return (await findFolderId(accessToken, PDF_FOLDER_NAME, rootId)) ?? (await createFolder(accessToken, PDF_FOLDER_NAME, rootId));
-    })(),
-    (async () => {
-      return (await findFolderId(accessToken, IMAGES_FOLDER_NAME, rootId)) ?? (await createFolder(accessToken, IMAGES_FOLDER_NAME, rootId));
-    })()
-  ]);
-
-  return { pdfFolderId, imagesFolderId };
-}
-
-async function uploadEvidenceImagesToDrive(
-  accessToken: string,
+async function syncPdfToSharePoint(
+  supabaseServer: ReturnType<typeof createClient>,
   data: RegistroRow,
-  imagesFolderId: string | undefined,
-  supabaseStorage?: SupabaseForStorage
-): Promise<{ name: string; id: string }[]> {
-  const uploadedImages: { name: string; id: string }[] = [];
-  const imageUrls = data.image_urls || [];
+  pdfBytes: Uint8Array,
+  fileName: string
+): Promise<{ driveItemId: string | null }> {
+  const uid = data.user_id!;
 
-  for (let index = 0; index < imageUrls.length; index++) {
-    const url = imageUrls[index];
-    if (!url || typeof url !== 'string') continue;
-
-    let mimeType = 'image/jpeg';
-    let bytes: Uint8Array | null = null;
-    if (url.startsWith('data:')) {
-      const match = url.match(/^data:(.+);base64,(.+)$/);
-      if (!match) continue;
-      const [, parsedMime, base64Data] = match;
-      mimeType = parsedMime;
-      const binary = atob(base64Data);
-      const len = binary.length;
-      bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-    } else if (supabaseStorage) {
-      const { data: blob, error } = await supabaseStorage.storage.from(EVIDENCE_STORAGE_BUCKET).download(url);
-      if (error || !blob) continue;
-      mimeType = blob.type || 'image/jpeg';
-      bytes = new Uint8Array(await blob.arrayBuffer());
+  let reportSeq: number;
+  const existingSeq = data.sharepoint_folder_seq;
+  if (existingSeq != null && Number(existingSeq) > 0) {
+    reportSeq = Number(existingSeq);
+  } else {
+    const { data: seqRaw, error: seqErr } = await supabaseServer.rpc('next_sharepoint_report_seq', {
+      p_user_id: uid
+    });
+    if (seqErr) {
+      throw new Error(`SharePoint: no se pudo asignar carpeta TS-REPORTES (${seqErr.message})`);
     }
-    if (!bytes) continue;
-
-    const imageName = `CTPAT_IMG_${data.folio_pdf || data.service_id || data.id}_${index + 1}`;
-    try {
-      const imgRes = await uploadToDrive(accessToken, imageName, bytes, mimeType, imagesFolderId);
-      uploadedImages.push({ name: imageName, id: imgRes.id as string });
-    } catch {
-      // Una imagen fallida no bloquea el resto
+    reportSeq =
+      typeof seqRaw === 'number'
+        ? seqRaw
+        : typeof seqRaw === 'string'
+          ? parseInt(seqRaw, 10)
+          : NaN;
+    if (!Number.isFinite(reportSeq) || reportSeq < 1) {
+      throw new Error('SharePoint: secuencia de carpeta TS-REPORTES inválida.');
+    }
+    const { error: persistErr } = await supabaseServer
+      .from('registros_ctpat')
+      .update({ sharepoint_folder_seq: reportSeq })
+      .eq('id', data.id)
+      .eq('user_id', uid);
+    if (persistErr) {
+      throw new Error(`SharePoint: no se pudo guardar carpeta TS-REPORTES S${reportSeq}: ${persistErr.message}`);
     }
   }
 
-  return uploadedImages;
+  const graphToken = await getGraphAppAccessToken();
+  const driveId = await getDefaultDocumentLibraryDriveId(graphToken);
+  const pdfFolderId = await ensureFolderPath(
+    graphToken,
+    driveId,
+    userPdfFolderSegments(uid, reportSeq)
+  );
+
+  const pdfRes = await uploadFileToFolder(
+    graphToken,
+    driveId,
+    pdfFolderId,
+    fileName,
+    pdfBytes,
+    'application/pdf'
+  );
+  return { driveItemId: pdfRes.id ?? null };
 }
 
 /** Soporta data URL legacy o ruta privada en Supabase Storage. */
@@ -551,14 +400,6 @@ function drawEvidenceImageWithOrientation(
     height: finalH
   });
 }
-
-type SupabaseForStorage = {
-  storage: {
-    from: (bucket: string) => {
-      download: (path: string) => Promise<{ data: Blob | null; error: Error | null }>;
-    };
-  };
-};
 
 async function buildPdf(
   registro: RegistroRow,
@@ -2215,7 +2056,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         ok: false,
-        error: 'Unauthorized: invalid or expired session (vuelve a iniciar sesión con Google)'
+        error: 'Unauthorized: invalid or expired session (vuelve a iniciar sesión)'
       }),
       {
         status: 401,
@@ -2231,14 +2072,9 @@ Deno.serve(async (req) => {
   try {
     const body = (await req.json()) as {
       registroId?: string;
-      accessToken?: string;
       driveOnly?: boolean;
     };
     const registroId = typeof body.registroId === 'string' ? body.registroId : null;
-    const accessToken =
-      typeof body.accessToken === 'string' && body.accessToken.trim().length > 0
-        ? body.accessToken.trim()
-        : null;
     const driveOnly = body.driveOnly === true;
 
     if (!registroId) {
@@ -2285,12 +2121,8 @@ Deno.serve(async (req) => {
       return uploadedImages.length > 0 ? { ...prev, uploadedImages } : { ...prev };
     };
 
-    // --- Solo subir a Drive (PDF ya está en Storage) ---
+    // --- Solo subir a SharePoint (PDF ya está en Storage) ---
     if (driveOnly) {
-      if (!accessToken) {
-        return jsonError(origin, 400, 'accessToken es requerido para sincronizar con Drive');
-      }
-
       const data = row;
 
       if (data.drive_file_id) {
@@ -2325,73 +2157,26 @@ Deno.serve(async (req) => {
 
       const pdfBytes = new Uint8Array(await blob.arrayBuffer());
 
-      const { data: authUserRow } = await supabaseServer.auth.admin.getUserById(data.user_id);
-      const userMeta = authUserRow?.user?.user_metadata as Record<string, unknown> | undefined;
-
-      const { data: driveCfg, error: driveCfgError } = await supabaseServer
-        .from('user_drive_config')
-        .select('pdf_folder_id, images_folder_id, service_logo_file')
-        .eq('user_id', data.user_id)
-        .single<UserDriveConfigRow>();
-
-      let finalDriveCfg: UserDriveConfigRow | null = driveCfg ?? null;
-      if (driveCfgError || !finalDriveCfg) {
-        const { pdfFolderId, imagesFolderId } = await ensureDriveFolders(accessToken);
-        const { data: inserted, error: insertErr } = await supabaseServer
-          .from('user_drive_config')
-          .insert({
-            user_id: data.user_id,
-            pdf_folder_id: pdfFolderId,
-            images_folder_id: imagesFolderId,
-            service_logo_file: normalizeServiceLogoFile(logoFromUserMetadata(userMeta))
-          })
-          .select('pdf_folder_id, images_folder_id, service_logo_file')
-          .single<UserDriveConfigRow>();
-
-        if (!insertErr && inserted) {
-          finalDriveCfg = inserted;
-        } else {
-          finalDriveCfg = {
-            pdf_folder_id: pdfFolderId,
-            images_folder_id: imagesFolderId,
-            service_logo_file: null
-          };
-        }
-      }
-
       const rawFolioFile = (data.folio_pdf ?? '').toString().trim();
       const mFile = rawFolioFile.match(/^TS-0*(\d+)$/i);
       const folioNumFile = mFile ? Number(mFile[1]) : null;
       const folioFile = folioNumFile != null ? `TS-${folioNumFile}` : rawFolioFile || `TS-${data.id}`;
       const fileName = `${folioFile}.pdf`;
 
-      const driveResponse = await uploadToDrive(
-        accessToken,
-        fileName,
-        pdfBytes,
-        'application/pdf',
-        finalDriveCfg?.pdf_folder_id
-      );
-      const uploadedImages = await uploadEvidenceImagesToDrive(
-        accessToken,
-        data,
-        finalDriveCfg?.images_folder_id,
-        supabaseServer
-      );
-      const driveId = (driveResponse as { id?: string }).id ?? null;
+      const { driveItemId } = await syncPdfToSharePoint(supabaseServer, data, pdfBytes, fileName);
 
       await supabaseServer
         .from('registros_ctpat')
         .update({
           sync_status: 'synced',
-          drive_file_id: driveId,
-          evidencias_exif: mergeEvidencias(data.evidencias_exif, uploadedImages)
+          drive_file_id: driveItemId,
+          evidencias_exif: mergeEvidencias(data.evidencias_exif, [])
         })
         .eq('id', data.id)
         .eq('user_id', data.user_id);
 
       return new Response(
-        JSON.stringify({ ok: true, driveSynced: true, driveFile: driveResponse }),
+        JSON.stringify({ ok: true, driveSynced: true, driveFile: { id: driveItemId } }),
         {
           status: 200,
           headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) }
@@ -2399,56 +2184,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // --- Generar PDF: Drive primero (formato para servicios), Storage como respaldo ---
+    // --- Generar PDF: SharePoint primero (formato para servicios), Storage como respaldo ---
     registroIdForCleanup = registroId;
 
     const data = row;
 
-    if (!accessToken) {
-      return jsonError(
-        origin,
-        400,
-        'Se requiere acceso a Google Drive para subir el registro a servicios. Inicia sesión con Google y acepta los permisos de Drive.'
-      );
-    }
-
     const { data: authUserRow } = await supabaseServer.auth.admin.getUserById(data.user_id);
     const userMeta = authUserRow?.user?.user_metadata as Record<string, unknown> | undefined;
 
-    const { data: driveCfg, error: driveCfgError } = await supabaseServer
-      .from('user_drive_config')
-      .select('pdf_folder_id, images_folder_id, service_logo_file')
-      .eq('user_id', data.user_id)
-      .single<UserDriveConfigRow>();
-
-    let finalDriveCfg: UserDriveConfigRow | null = driveCfg ?? null;
-    if (driveCfgError || !finalDriveCfg) {
-      const { pdfFolderId, imagesFolderId } = await ensureDriveFolders(accessToken);
-      const { data: inserted, error: insertErr } = await supabaseServer
-        .from('user_drive_config')
-        .insert({
-          user_id: data.user_id,
-          pdf_folder_id: pdfFolderId,
-          images_folder_id: imagesFolderId,
-          service_logo_file: normalizeServiceLogoFile(logoFromUserMetadata(userMeta))
-        })
-        .select('pdf_folder_id, images_folder_id, service_logo_file')
-        .single<UserDriveConfigRow>();
-
-      if (!insertErr && inserted) {
-        finalDriveCfg = inserted;
-      } else {
-        finalDriveCfg = {
-          pdf_folder_id: pdfFolderId,
-          images_folder_id: imagesFolderId,
-          service_logo_file: null
-        };
-      }
-    }
-
-    if (!finalDriveCfg?.pdf_folder_id || !finalDriveCfg?.images_folder_id) {
-      return jsonError(origin, 500, 'No se pudo preparar las carpetas de Google Drive para el usuario.');
-    }
+    const finalDriveCfg = await ensureUserLogoRow(supabaseServer, data.user_id, userMeta);
 
     const resolvedCenterLogo = (() => {
       const d = finalDriveCfg?.service_logo_file?.trim();
@@ -2465,24 +2209,10 @@ Deno.serve(async (req) => {
     const folioFile = folioNumFile != null ? `TS-${folioNumFile}` : rawFolioFile || `TS-${data.id}`;
     const fileName = `${folioFile}.pdf`;
 
-    // 1) Google Drive primero: si falla, error HTTP y no se marca como synced (servicios sin formato).
-    const driveResponse = await uploadToDrive(
-      accessToken,
-      fileName,
-      pdfBytes,
-      'application/pdf',
-      finalDriveCfg.pdf_folder_id
-    );
-    const uploadedImages = await uploadEvidenceImagesToDrive(
-      accessToken,
-      data,
-      finalDriveCfg.images_folder_id,
-      supabaseServer
-    );
+    // 1) SharePoint (Graph app-only): si falla, error HTTP y no se marca como synced (servicios sin formato).
+    const { driveItemId } = await syncPdfToSharePoint(supabaseServer, data, pdfBytes, fileName);
 
-    const driveId = (driveResponse as { id?: string }).id ?? null;
-
-    // 2) Copia en Storage (respaldo); un fallo aquí no invalida Drive.
+    // 2) Copia en Storage (respaldo); un fallo aquí no invalida SharePoint.
     const storagePath = `${data.user_id}/${data.id}.pdf`;
     let storagePathSaved: string | null = null;
     const { error: upErr } = await supabaseServer.storage
@@ -2492,7 +2222,7 @@ Deno.serve(async (req) => {
         upsert: true
       });
     if (upErr) {
-      console.error('Storage backup tras Drive OK:', upErr.message);
+      console.error('Storage backup tras SharePoint OK:', upErr.message);
     } else {
       storagePathSaved = storagePath;
     }
@@ -2502,8 +2232,8 @@ Deno.serve(async (req) => {
       .update({
         sync_status: 'synced',
         pdf_storage_path: storagePathSaved,
-        drive_file_id: driveId,
-        evidencias_exif: mergeEvidencias(data.evidencias_exif, uploadedImages)
+        drive_file_id: driveItemId,
+        evidencias_exif: mergeEvidencias(data.evidencias_exif, [])
       })
       .eq('id', data.id)
       .eq('user_id', data.user_id);
@@ -2514,7 +2244,7 @@ Deno.serve(async (req) => {
         storagePath: storagePathSaved,
         driveSynced: true,
         needsDriveSync: false,
-        driveFile: driveResponse
+        driveFile: { id: driveItemId }
       }),
       {
         status: 200,
@@ -2527,7 +2257,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error(err);
 
-    // Solo si falló la generación / Storage (no el reintento solo-Drive).
+    // Solo si falló la generación / Storage (no el reintento solo-SharePoint).
     if (registroIdForCleanup) {
       try {
         const supabaseServer = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

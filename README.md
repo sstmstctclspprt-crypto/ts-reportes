@@ -49,8 +49,8 @@ Ejecuta el SQL en tu proyecto Supabase (SQL Editor) y verifica que la tabla exis
 
 El archivo `src/stores/authStore.ts` implementa un `authStore` con Pinia, análogo al `AuthService` original:
 
-- Usa `supabase.auth.signInWithOAuth` con proveedor **Google**.
-- Solicita scopes: `openid profile email https://www.googleapis.com/auth/drive.file`.
+- Usa `supabase.auth.signInWithOAuth` con proveedor **Google** (solo identidad).
+- Solicita scopes: `openid profile email` (sin permisos de Drive; la subida a archivos es en **SharePoint** vía la Edge Function).
 - Persiste la sesión con `supabase.auth.getSession()`.
 - Expone estado:
   - `isSignedIn`
@@ -110,9 +110,9 @@ La función `persistRegistro()`:
 - Normaliza a mayúsculas (`toUpperCase()`) los campos generales.
 - Inserta el registro en Supabase (`registros_ctpat`) con `sync_status = 'pending'`.
 - Marca localmente los datos como `syncStatus: 'pending'`.
-- Encola el registro en el `syncStore` para sincronizar PDF/Drive vía Edge Function.
+- Encola el registro en el `syncStore` para sincronizar PDF/SharePoint vía Edge Function.
 
-## 4. Sincronización y Cola Offline (Drive Sync)
+## 4. Sincronización y Cola Offline (SharePoint sync)
 
 `src/stores/syncStore.ts` implementa un store para la **cola de sincronización offline**:
 
@@ -141,35 +141,33 @@ La función `persistRegistro()`:
     - Actualiza `status` a `done` o `error`.
     - Agrega el resultado al `history`.
 
-**Importante:** La generación de PDF y la subida a Drive no se hace en el navegador, sino en la Edge Function.
+**Importante:** La generación de PDF y la subida a SharePoint no se hace en el navegador, sino en la Edge Function (Microsoft Graph con **client credentials**).
 
-## 5. Edge Function: Generación de PDF y Google Drive
+## 5. Edge Function: Generación de PDF y SharePoint (Microsoft Graph)
 
-La función está en `supabase/functions/generate-ctpat-pdf/index.ts`:
+Código en `supabase/functions/generate-ctpat-pdf/` (`index.ts` + `graphSharePoint.ts`):
 
-1. **Recupera el registro** desde Supabase (usando Service Role):
-   - Tabla `registros_ctpat`.
-2. **Genera un PDF de 4 páginas** con `pdf-lib`:
-   - P1: Datos generales + Checklist (Tracto/Caja).
-   - P2: Inspección Agrícola.
-   - P3: Fotos (2x3) – por ahora lista de URLs como texto; se puede extender para embeber imágenes.
-   - P4: Inspección Mecánica + placeholders para Firmas (rectángulos donde en el futuro se pueden dibujar las firmas capturadas).
-3. **Sube el PDF a Google Drive**:
-   - Usa una **Service Account** (cuenta maestra).
-   - Construye un JWT, obtiene un access token (`https://oauth2.googleapis.com/token`).
-   - Sube el archivo con `multipart/related` a `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`.
-   - Opcionalmente lo guarda en una carpeta (`GOOGLE_DRIVE_FOLDER_ID`).
-4. **Marca el registro como `synced`** en Supabase.
+1. **Recupera el registro** desde Supabase (Service Role): tabla `registros_ctpat`.
+2. **Genera un PDF** de varias páginas con `pdf-lib` (estructura CT-PAT).
+3. **Sube el PDF y las evidencias** a la biblioteca predeterminada del sitio SharePoint indicado:
+   - Token OAuth de **aplicación**: `POST` a `login.microsoftonline.com/{tenant}/oauth2/v2.0/token` con `AZURE_*`.
+   - **Una carpeta por registro**, secuencial por usuario: `TS REPORTES/users/<user_id>/TS-REPORTES S1/`, `TS-REPORTES S2/`, etc. (nombre raíz configurable con `GRAPH_ROOT_FOLDER_NAME`). Dentro va solo el PDF de ese registro. Las fotos/firmas van **embebidas en el PDF**.
+4. **Copia de respaldo** del PDF en Storage (`ctpat-pdfs`) cuando aplica.
+5. **Marca el registro como `synced`** y guarda el id del ítem de Graph en `drive_file_id`.
 
-### Variables de entorno para la Edge Function
+### Entra ID / permisos (TI)
 
-Configura en Supabase:
+- Registro de aplicación en el inquilino M365 con permisos de aplicación a Microsoft Graph (p. ej. `Sites.Selected` y concesión en el sitio, u otro permiso acordado con seguridad).
+- Sin secretos de Microsoft en el frontend.
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `GOOGLE_CLIENT_EMAIL`
-- `GOOGLE_PRIVATE_KEY` (PEM; en Supabase suele ponerse con `\n` escapados)
-- `GOOGLE_DRIVE_FOLDER_ID` (opcional)
+### Variables de entorno para la Edge Function (Supabase)
+
+Obligatorias para Graph + Supabase:
+
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`
+- `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`
+- Sitio SharePoint: `GRAPH_SHAREPOINT_SITE_ID` **o** `GRAPH_SITE_HOSTNAME` + `GRAPH_SITE_PATH` (ej. `contoso.sharepoint.com` y `/sites/CTPAT`)
+- Opcional: `GRAPH_ROOT_FOLDER_NAME` (default `TS REPORTES`), `EVIDENCE_BUCKET`, buckets de logos/PDFs según ya tengas.
 
 Despliegue:
 
@@ -177,13 +175,7 @@ Despliegue:
 supabase functions deploy generate-ctpat-pdf --no-verify-jwt
 ```
 
-Y publica vía:
-
-```bash
-supabase functions serve --env-file ./supabase/.env
-```
-
-*(ajusta comandos según tu flujo de CI/CD)*.
+Desarrollo local: `supabase functions serve --env-file ./supabase/.env` (o secretos en CLI).
 
 ## 6. UI y Estilo (Tailwind CSS)
 
@@ -223,17 +215,20 @@ npm run dev
 5. Despliega la Edge Function `generate-ctpat-pdf` y configura la URL base de Supabase para que
    el path `/functions/v1/generate-ctpat-pdf` esté disponible para la PWA.
 
+### Despliegue en Vercel (solo frontend)
+
+1. Conecta el repo en Vercel y usa **Framework Preset: Vite** (build: `npm run build`, output: `dist`).
+2. **Variables de entorno** del proyecto (Production / Preview):
+   - `VITE_SUPABASE_URL` — URL del proyecto Supabase.
+   - `VITE_SUPABASE_ANON_KEY` — clave anónima (pública) de Supabase.
+   - `VITE_SITE_URL` — URL pública de la app en Vercel (ej. `https://tu-app.vercel.app`), **sin** barra final; sirve para OAuth y enlaces.
+   - Opcional: `VITE_LOGO_BUCKET`, `VITE_EVIDENCE_BUCKET` si los usas en el cliente.
+3. En **Supabase → Authentication → URL Configuration**, añade la URL de Vercel en **Redirect URLs** y **Site URL** si aplica.
+4. El archivo [`vercel.json`](vercel.json) ya define headers de seguridad y rewrite SPA; no hace falta configuración extra para rutas.
+
 ## 8. Puntos a extender / personalizar
 
 - Integración real de captura y subida de imágenes a Supabase Storage (en lugar de solo URLs).
 - Render de firmas en el PDF embebiendo las imágenes base64.
 - Replicar al detalle el layout original del `PdfService` de Flutter (tipografías, tablas, logotipos).
 - Implementar modo PWA (manifest y service worker) para soporte offline avanzado.
-
-#   T S - R E P O R T S 
- 
- #   t s - r e p o r t e s 
- 
- #   t s - r e p o r t e s 
- 
- 

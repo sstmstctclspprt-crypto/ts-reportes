@@ -129,14 +129,9 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('focus', refreshSessionIfVisible);
 
-  const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && session?.user) {
-      // @ts-expect-error provider_token OAuth
-      const pt = (session as any).provider_token;
-      if (typeof pt === 'string' && pt.length) {
-        auth.googleAccessToken = pt;
-        auth.rememberGoogleProviderToken(session.user.id, pt);
-      }
+  const { data } = supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_IN') {
+      void auth.initSession();
     }
   });
   authSubscription = data.subscription;

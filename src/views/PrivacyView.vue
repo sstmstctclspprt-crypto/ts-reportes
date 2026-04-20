@@ -25,10 +25,11 @@
         almacenar evidencia relacionada con los registros y dar seguimiento técnico y operativo.
       </p>
 
-      <h3 class="font-semibold text-slate-900">3. Integración con Google Drive</h3>
+      <h3 class="font-semibold text-slate-900">3. Almacenamiento en Microsoft 365 / SharePoint</h3>
       <p>
-        La app solicita permisos de Google para crear carpetas y guardar reportes/evidencias del usuario en
-        su Google Drive. No vendemos ni compartimos estos datos con terceros para fines comerciales.
+        Los reportes PDF y evidencias se pueden guardar en bibliotecas de documentos de SharePoint en su
+        organización, mediante una integración administrada por el equipo de TI (Microsoft Graph,
+        permisos de aplicación). El acceso del personal autorizado sigue las políticas de su empresa.
       </p>
 
       <h3 class="font-semibold text-slate-900">4. Seguridad</h3>

@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { supabase } from '../supabaseClient';
 import { useAuthStore } from './authStore';
 import {
-  isGoogleDriveAccessError,
+  isMicrosoftGraphAccessError,
   isSessionExpiredError,
   isSupabaseGatewayUnauthorized,
   SESSION_EXPIRED_SHORT
@@ -73,27 +73,22 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
     token = s2.session?.access_token?.trim();
   }
   if (!token) {
-    throw new Error('No hay sesión para generar el PDF. Inicia sesión de nuevo con Google.');
+    throw new Error('No hay sesión para generar el PDF. Vuelve a iniciar sesión.');
   }
   return token;
 }
 
 /**
- * Edge Function `generate-ctpat-pdf`: JWT Supabase + token Google Drive del usuario (cada cuenta su Drive).
- * Reintenta JWT Supabase ante 401 de puerta; ante error de Drive, otro token desde sesión Supabase.
+ * Edge Function `generate-ctpat-pdf`: JWT Supabase (SharePoint vía Graph app-only en el servidor).
+ * Reintenta JWT Supabase ante 401 de puerta.
  */
-async function invokeGenerateCtpatPdf(
-  registroId: string,
-  options?: { googleAccessToken?: string }
-): Promise<void> {
+async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
   const auth = useAuthStore();
 
-  let googleDriveAccessToken =
-    options?.googleAccessToken ?? (await auth.ensureGoogleDriveAccessTokenForApi());
   let jwt = await getSupabaseJwtForEdgeFunction(auth);
 
-  const runOnce = async (userJwt: string, accessToken: string): Promise<void> => {
+  const runOnce = async (userJwt: string): Promise<void> => {
     const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
     if (!baseUrl) {
       throw new Error('Falta VITE_SUPABASE_URL.');
@@ -116,8 +111,7 @@ async function invokeGenerateCtpatPdf(
         'X-Client-Info': 'ts-ctpat-pwa'
       },
       body: JSON.stringify({
-        registroId,
-        accessToken
+        registroId
       })
     });
 
@@ -146,27 +140,18 @@ async function invokeGenerateCtpatPdf(
     }
   };
 
-  driveRetry: for (let driveRound = 0; driveRound < 2; driveRound++) {
-    for (let attempt = 0; attempt < 5; attempt++) {
-      try {
-        await runOnce(jwt, googleDriveAccessToken);
-        return;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (isSupabaseGatewayUnauthorized(message) && attempt < 4) {
-          await auth.refreshSessionForApi({ force: true });
-          jwt = await getSupabaseJwtForEdgeFunction(auth);
-          continue;
-        }
-        if (isGoogleDriveAccessError(message) && driveRound === 0) {
-          await auth.refreshSessionForApi({ force: true });
-          auth.clearGoogleProviderTokenCache();
-          auth.googleAccessToken = null;
-          googleDriveAccessToken = await auth.ensureGoogleDriveAccessTokenForApi();
-          continue driveRetry;
-        }
-        throw err;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await runOnce(jwt);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (isSupabaseGatewayUnauthorized(message) && attempt < 4) {
+        await auth.refreshSessionForApi({ force: true });
+        jwt = await getSupabaseJwtForEdgeFunction(auth);
+        continue;
       }
+      throw err;
     }
   }
   throw new Error('generate-ctpat-pdf: reintentos agotados');
@@ -174,7 +159,7 @@ async function invokeGenerateCtpatPdf(
 
 function shouldInvalidateLocalSession(message: string): boolean {
   // Mantener sesión local salvo errores reales de autenticación Supabase.
-  // Errores de Drive/OAuth de Google deben manejarse con reconexión, no con signOut forzado.
+  // Errores de Microsoft Graph no deben cerrar sesión Supabase.
   if (isSessionExpiredError(message)) return true;
   const m = message.toLowerCase();
   return (
@@ -394,12 +379,6 @@ export const useSyncStore = defineStore('sync', {
         return { hadError: false, skipped: true };
       }
 
-      const queueNeedsDrivePdf = this.queue.some(
-        (q) =>
-          q.status === 'pending' &&
-          (q.kind === 'generate_pdf' || q.kind === 'create_registro_and_generate')
-      );
-
       this.syncing = true;
       let hadSuccess = false;
       let hadError = false;
@@ -426,19 +405,9 @@ export const useSyncStore = defineStore('sync', {
           return {
             hadError: true,
             lastError:
-              'No se pudo validar la sesión para sincronizar. Comprueba la conexión o vuelve a iniciar sesión con Google.',
+              'No se pudo validar la sesión para sincronizar. Comprueba la conexión o vuelve a iniciar sesión.',
             skipped: false
           };
-        }
-
-        /** No usar solo la caché en memoria: el access token de Google caduca (~1 h) y provoca 401 en Drive. */
-        let prefetchedDriveToken: string | undefined;
-        if (queueNeedsDrivePdf) {
-          try {
-            prefetchedDriveToken = await authStore.ensureGoogleDriveAccessTokenForApi();
-          } catch {
-            prefetchedDriveToken = undefined;
-          }
         }
 
         for (const item of this.queue) {
@@ -450,14 +419,7 @@ export const useSyncStore = defineStore('sync', {
           try {
             if (item.kind === 'generate_pdf') {
               const payload = item.payload as GeneratePdfPayload;
-              const driveTok =
-                prefetchedDriveToken ?? authStore.googleAccessToken ?? undefined;
-              await invokeGenerateCtpatPdf(payload.registroId, {
-                googleAccessToken: driveTok
-              });
-              if (authStore.googleAccessToken) {
-                prefetchedDriveToken = authStore.googleAccessToken;
-              }
+              await invokeGenerateCtpatPdf(payload.registroId);
 
               item.status = 'done';
               item.lastError = undefined;
@@ -543,14 +505,7 @@ export const useSyncStore = defineStore('sync', {
                 throw new Error(`Error insertando registro: ${insertErr?.message ?? 'sin detalle'}`);
               }
 
-              const driveTok =
-                prefetchedDriveToken ?? authStore.googleAccessToken ?? undefined;
-              await invokeGenerateCtpatPdf(inserted.id, {
-                googleAccessToken: driveTok
-              });
-              if (authStore.googleAccessToken) {
-                prefetchedDriveToken = authStore.googleAccessToken;
-              }
+              await invokeGenerateCtpatPdf(inserted.id);
 
               item.status = 'done';
               item.lastError = undefined;
@@ -566,8 +521,8 @@ export const useSyncStore = defineStore('sync', {
             }
           } catch (err) {
             const rawMessage = err instanceof Error ? err.message : String(err);
-            const message = isGoogleDriveAccessError(rawMessage)
-              ? 'Google Drive requiere reconexión. Pulsa «Reconectar Google» y luego «Reintentar».'
+            const message = isMicrosoftGraphAccessError(rawMessage)
+              ? 'Error al subir a SharePoint (Microsoft Graph). Revisa la configuración en el servidor o pulsa «Reintentar».'
               : rawMessage;
             if (shouldInvalidateLocalSession(message)) {
               await this.handleSessionInvalidated();
