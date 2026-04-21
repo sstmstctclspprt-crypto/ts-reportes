@@ -1,0 +1,8 @@
+{
+  "name": "appweb-ts",
+  "private": true,
+  "workspaces": ["frontend"],
+  "scripts": {
+    "build": "npm run build -w tactical-support-ctpat-pwa"
+  }
+}
