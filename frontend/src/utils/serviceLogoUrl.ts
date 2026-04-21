@@ -5,15 +5,18 @@ const BUCKET = (import.meta.env.VITE_LOGO_BUCKET as string | undefined)?.trim();
 
 /**
  * URL para mostrar el logo de servicio en la PWA.
- * Si `VITE_LOGO_BUCKET` está definido, usa Storage público de Supabase; si no, `/nombre.png` (carpeta `public/`).
+ * Solo las rutas `logos/...` son subidas al bucket; el resto (`logo.png`, `danfoss.png`, etc.)
+ * viven en `public/` de la app. Si usáramos Storage para `logo.png` sin subirlo, el navegador
+ * pediría un objeto inexistente y verías 400/404 en consola.
  */
 export function getServiceLogoPublicUrl(filename: string | null | undefined): string {
   const name = filename?.trim() ?? '';
   if (!name) return '';
   if (!/^[a-zA-Z0-9/_\.-]+\.(png|jpe?g)$/i.test(name)) return '';
-  if (BUCKET) {
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(name);
+  const useBucket = Boolean(BUCKET && name.toLowerCase().startsWith('logos/'));
+  if (useBucket) {
+    const { data } = supabase.storage.from(BUCKET as string).getPublicUrl(name);
     return data.publicUrl;
   }
-  return `/${name}`;
+  return name.startsWith('/') ? name : `/${name}`;
 }
