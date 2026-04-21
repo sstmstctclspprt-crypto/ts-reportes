@@ -82,21 +82,25 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
  * Edge Function `generate-ctpat-pdf`: JWT Supabase + token OAuth de Google Drive.
  * Reintenta JWT Supabase ante 401 de puerta.
  */
+/** Mensaje cuando Drive falla por token de Google caducado o permisos (texto estable para UI/cola). */
+export const GOOGLE_DRIVE_SYNC_USER_MESSAGE =
+  'Error al subir a Google Drive. Si llevas la sesión abierta mucho tiempo, cierra sesión e inicia otra vez con Google; si sigue igual, revisa permisos de Drive en tu cuenta.';
+
 async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
   const auth = useAuthStore();
 
-  const {
-    data: { session: oauthSession }
-  } = await supabase.auth.getSession();
-  const googleAccessToken = (oauthSession as any)?.provider_token as string | undefined;
-  if (!googleAccessToken) {
-    throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
-  }
-
   let jwt = await getSupabaseJwtForEdgeFunction(auth);
 
   const runOnce = async (userJwt: string): Promise<void> => {
+    const {
+      data: { session: oauthSession }
+    } = await supabase.auth.getSession();
+    const googleAccessToken = (oauthSession as { provider_token?: string })?.provider_token?.trim();
+    if (!googleAccessToken) {
+      throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
+    }
+
     const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
     if (!baseUrl) {
       throw new Error('Falta VITE_SUPABASE_URL.');
@@ -531,7 +535,7 @@ export const useSyncStore = defineStore('sync', {
           } catch (err) {
             const rawMessage = err instanceof Error ? err.message : String(err);
             const message = isGoogleDriveAccessError(rawMessage)
-              ? 'Error al subir a Google Drive. Revisa permisos de Google y vuelve a intentar.'
+              ? GOOGLE_DRIVE_SYNC_USER_MESSAGE
               : rawMessage;
             if (shouldInvalidateLocalSession(message)) {
               await this.handleSessionInvalidated();
