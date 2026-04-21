@@ -47,22 +47,14 @@ export const SESSION_EXPIRED = {
 /** Mensaje breve para cola de sincronización / historial de errores. */
 export const SESSION_EXPIRED_SHORT = 'Sesión finalizada. Vuelve a iniciar sesión.';
 
-/**
- * Errores de Microsoft Graph / SharePoint (Edge Function o mensajes propagados).
- * No confundir con JWT de Supabase: no debe disparar cierre de sesión Supabase.
- */
-export function isMicrosoftGraphAccessError(message: string | null | undefined): boolean {
+/** Errores de Google Drive / OAuth de Google. */
+export function isGoogleDriveAccessError(message: string | null | undefined): boolean {
   const m = (message ?? '').toLowerCase();
   if (!m.trim()) return false;
-  if (m.includes('microsoft graph')) return true;
-  if (m.includes('sharepoint')) return true;
-  if (m.includes('sites.selected')) return true;
-  if (m.includes('azure_tenant_id') || m.includes('azure_client')) return true;
-  if (m.includes('graph (')) return true;
+  if (m.includes('google drive')) return true;
+  if (m.includes('googleapis.com')) return true;
+  if (m.includes('provider_token')) return true;
+  if (m.includes('accesstoken') && m.includes('google')) return true;
   return false;
 }
 
-/** @deprecated Errores de Google Drive ya no aplican; mantenido por compatibilidad de texto. */
-export function isGoogleDriveAccessError(message: string | null | undefined): boolean {
-  return isMicrosoftGraphAccessError(message);
-}

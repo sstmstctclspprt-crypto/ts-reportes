@@ -771,7 +771,7 @@ const operadorPad = ref<InstanceType<typeof VueSignaturePad> | null>(null);
 const oficialPad = ref<InstanceType<typeof VueSignaturePad> | null>(null);
 
 const saving = ref(false);
-/** Panel tras guardar: sincronización con SharePoint / PDF */
+/** Panel tras guardar: sincronización con Google Drive / PDF */
 const saveSyncPhase = ref<'idle' | 'saving' | 'syncing' | 'success' | 'error'>('idle');
 const saveSyncDetail = ref('');
 const lastSavedFolio = ref('');
@@ -781,7 +781,7 @@ const saveSyncPanelTitle = computed(() => {
     case 'saving':
       return 'Guardando registro en el servidor…';
     case 'syncing':
-      return 'Sincronizando PDF con SharePoint…';
+      return 'Sincronizando PDF con Google Drive…';
     case 'success':
       return 'Listo: registro y PDF sincronizados correctamente.';
     case 'error':

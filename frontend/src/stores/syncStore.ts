@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { supabase } from '../supabaseClient';
 import { useAuthStore } from './authStore';
 import {
-  isMicrosoftGraphAccessError,
+  isGoogleDriveAccessError,
   isSessionExpiredError,
   isSupabaseGatewayUnauthorized,
   SESSION_EXPIRED_SHORT
@@ -79,12 +79,20 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
 }
 
 /**
- * Edge Function `generate-ctpat-pdf`: JWT Supabase (SharePoint vía Graph app-only en el servidor).
+ * Edge Function `generate-ctpat-pdf`: JWT Supabase + token OAuth de Google Drive.
  * Reintenta JWT Supabase ante 401 de puerta.
  */
 async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
   const auth = useAuthStore();
+
+  const {
+    data: { session: oauthSession }
+  } = await supabase.auth.getSession();
+  const googleAccessToken = (oauthSession as any)?.provider_token as string | undefined;
+  if (!googleAccessToken) {
+    throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
+  }
 
   let jwt = await getSupabaseJwtForEdgeFunction(auth);
 
@@ -111,7 +119,8 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
         'X-Client-Info': 'ts-ctpat-pwa'
       },
       body: JSON.stringify({
-        registroId
+        registroId,
+        accessToken: googleAccessToken
       })
     });
 
@@ -159,7 +168,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
 
 function shouldInvalidateLocalSession(message: string): boolean {
   // Mantener sesión local salvo errores reales de autenticación Supabase.
-  // Errores de Microsoft Graph no deben cerrar sesión Supabase.
+  // Errores de Google Drive no deben cerrar sesión Supabase.
   if (isSessionExpiredError(message)) return true;
   const m = message.toLowerCase();
   return (
@@ -521,8 +530,8 @@ export const useSyncStore = defineStore('sync', {
             }
           } catch (err) {
             const rawMessage = err instanceof Error ? err.message : String(err);
-            const message = isMicrosoftGraphAccessError(rawMessage)
-              ? 'Error al subir a SharePoint (Microsoft Graph). Revisa la configuración en el servidor o pulsa «Reintentar».'
+            const message = isGoogleDriveAccessError(rawMessage)
+              ? 'Error al subir a Google Drive. Revisa permisos de Google y vuelve a intentar.'
               : rawMessage;
             if (shouldInvalidateLocalSession(message)) {
               await this.handleSessionInvalidated();

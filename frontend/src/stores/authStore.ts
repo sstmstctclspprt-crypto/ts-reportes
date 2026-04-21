@@ -273,7 +273,7 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     /**
-     * Crea fila en user_drive_config (logo) si no existe. La subida a SharePoint la hace la Edge Function.
+     * Crea fila en user_drive_config (logo) si no existe. La subida a Drive la hace la Edge Function.
      */
     async ensureUserStorageConfig() {
       const {
@@ -320,7 +320,7 @@ export const useAuthStore = defineStore('auth', {
           provider: 'google',
           options: {
             redirectTo,
-            scopes: 'openid profile email',
+            scopes: 'openid profile email https://www.googleapis.com/auth/drive.file',
             queryParams: {
               access_type: 'offline',
               prompt: 'consent'

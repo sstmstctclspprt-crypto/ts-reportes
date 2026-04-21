@@ -355,12 +355,12 @@ async function loadRegistros() {
     registros.value = [];
   } else {
     registros.value = data ?? [];
-    // Rehidrata la cola desde BD para registros que existen pero aún no se han subido a SharePoint.
+    // Rehidrata la cola desde BD para registros que existen pero aún no se han subido a Drive.
     // Esto evita falsos "Sincronización al día" después de recargas o cambios de dispositivo.
-    const pendingSharePointSync = (data ?? []).filter(
+    const pendingDriveSync = (data ?? []).filter(
       (r) => r.sync_status !== 'synced' || !r.drive_file_id
     );
-    for (const row of pendingSharePointSync) {
+    for (const row of pendingDriveSync) {
       if (row?.id) {
         syncStore.enqueueGeneratePdf({
           registroId: row.id,
@@ -368,7 +368,7 @@ async function loadRegistros() {
         });
       }
     }
-    if (pendingSharePointSync.length > 0) {
+    if (pendingDriveSync.length > 0) {
       void syncStore.processQueue();
     }
   }
