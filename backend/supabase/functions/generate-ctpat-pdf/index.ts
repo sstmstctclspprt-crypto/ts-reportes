@@ -94,7 +94,7 @@ async function uploadToDrive(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Error subiendo a Google Drive: ${text}`);
+    throw new Error(`Error subiendo a Google Drive (status ${res.status}): ${text}`);
   }
 
   const data = (await res.json()) as { id?: string };
@@ -102,6 +102,17 @@ async function uploadToDrive(
     throw new Error('Google Drive respondió sin id de archivo.');
   }
   return { id: data.id };
+}
+
+function isRecoverableDriveFolderError(errorMessage: string): boolean {
+  const msg = (errorMessage ?? '').toLowerCase();
+  return (
+    msg.includes('file not found') ||
+    msg.includes('notfound') ||
+    msg.includes('parentnotfound') ||
+    msg.includes('insufficient file permissions') ||
+    msg.includes('cannot find the requested parent')
+  );
 }
 
 async function findFolderId(accessToken: string, name: string, parentId?: string): Promise<string | null> {
@@ -300,8 +311,40 @@ async function syncPdfToGoogleDrive(
     driveCfg = upserted ?? { pdf_folder_id: pdfFolderId, images_folder_id: imagesFolderId, service_logo_file: null };
   }
 
-  const pdfRes = await uploadToDrive(accessToken, fileName, pdfBytes, 'application/pdf', driveCfg?.pdf_folder_id);
-  return { driveItemId: pdfRes.id ?? null };
+  const tryUpload = async (folderId: string | null | undefined) =>
+    await uploadToDrive(accessToken, fileName, pdfBytes, 'application/pdf', folderId);
+
+  try {
+    const pdfRes = await tryUpload(driveCfg?.pdf_folder_id);
+    return { driveItemId: pdfRes.id ?? null };
+  } catch (uploadErr) {
+    const message = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+    const shouldRecover = isRecoverableDriveFolderError(message);
+
+    if (!shouldRecover) {
+      throw uploadErr;
+    }
+
+    console.warn('[generate-ctpat-pdf] Reintentando upload con carpeta regenerada', {
+      userId: uid,
+      previousFolderId: driveCfg?.pdf_folder_id,
+      reason: message
+    });
+
+    // Si el parent guardado quedó inválido/desautorizado, reconstruimos estructura y persistimos IDs frescos.
+    const { pdfFolderId, imagesFolderId } = await ensureDriveFolders(accessToken);
+    await supabaseServer.from('user_drive_config').upsert(
+      {
+        user_id: uid,
+        pdf_folder_id: pdfFolderId,
+        images_folder_id: imagesFolderId
+      },
+      { onConflict: 'user_id' }
+    );
+
+    const pdfRes = await tryUpload(pdfFolderId);
+    return { driveItemId: pdfRes.id ?? null };
+  }
 }
 
 /** Soporta data URL legacy o ruta privada en Supabase Storage. */
