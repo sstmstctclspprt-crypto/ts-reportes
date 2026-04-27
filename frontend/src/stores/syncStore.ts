@@ -408,15 +408,17 @@ export const useSyncStore = defineStore('sync', {
           return { hadError: false, skipped: true };
         }
 
-        // No forzar refresh aquí: si no, a veces se pierde `provider_token` antes de `invokeGenerateCtpatPdf`.
-        let session = await authStore.refreshSessionForApi({ force: false });
+        // Leer sesión sin renovar JWT salvo que falte access_token: renovar aquí suele borrar
+        // `provider_token` de Google antes de que la cola llame a `invokeGenerateCtpatPdf`.
+        const {
+          data: { session: sessionFromStorage }
+        } = await supabase.auth.getSession();
+        let session = sessionFromStorage;
         if (!session?.access_token) {
-          const {
-            data: { session: fallback }
-          } = await supabase.auth.getSession();
-          if (fallback?.access_token) {
-            session = fallback;
-          }
+          session =
+            (await authStore.refreshSessionForApi({ force: true })) ??
+            (await supabase.auth.getSession()).data.session ??
+            null;
         }
         if (!session?.access_token) {
           return {

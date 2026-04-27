@@ -169,7 +169,19 @@ export const useAuthStore = defineStore('auth', {
       const ext = rawName.endsWith('.jpg') || rawName.endsWith('.jpeg') ? 'jpg' : 'png';
       const objectPath = `logos/${this.userId}.${ext}`;
 
-      await this.ensureDriveConfigIfNeeded();
+      // Si ya hay fila en BD, no pasar por ensureDriveConfigIfNeeded (evita refresh de sesión que
+      // puede quitar `provider_token` justo antes de guardar un registro / PDF).
+      try {
+        const cfg = await this.getDriveConfigRow(this.userId);
+        if (cfg) {
+          this.driveConfigReady = true;
+          this.serviceLogoFile = cfg.service_logo_file ?? null;
+        } else {
+          await this.ensureDriveConfigIfNeeded();
+        }
+      } catch {
+        await this.ensureDriveConfigIfNeeded();
+      }
 
       const { error: upErr } = await supabase.storage.from(LOGO_BUCKET).upload(objectPath, file, {
         upsert: true,
@@ -208,7 +220,8 @@ export const useAuthStore = defineStore('auth', {
     async ensureDriveConfigIfNeededBody() {
       if (!this.userId) return;
       try {
-        await this.refreshSessionForApi({ force: false });
+        // No llamar refreshSession aquí: rotar JWT antes de logo/Drive suele hacer que GoTrue guarde
+        // la sesión sin `provider_token` y falle generate-ctpat-pdf al guardar justo después.
         const existing = await this.getDriveConfigRow(this.userId);
         if (existing) {
           this.driveConfigReady = true;
@@ -230,7 +243,6 @@ export const useAuthStore = defineStore('auth', {
       } catch (e) {
         if (isPostgresUniqueViolation(e)) {
           try {
-            await this.refreshSessionForApi({ force: false });
             if (!this.userId) return;
             const row = await this.getDriveConfigRow(this.userId);
             if (row) {
@@ -310,7 +322,6 @@ export const useAuthStore = defineStore('auth', {
      * Crea fila en user_drive_config (logo) si no existe. La subida a Drive la hace la Edge Function.
      */
     async ensureUserStorageConfig() {
-      await this.refreshSessionForApi({ force: false });
       const {
         data: { session }
       } = await supabase.auth.getSession();
