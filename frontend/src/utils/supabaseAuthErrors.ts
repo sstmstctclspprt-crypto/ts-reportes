@@ -58,3 +58,21 @@ export function isGoogleDriveAccessError(message: string | null | undefined): bo
   return false;
 }
 
+/**
+ * 401 u otro fallo de credencial en llamadas a Google (Drive) que puede resolverse
+ * re-leyendo el `provider_token` tras `refreshSession` (aunque a veces haga falta volver a entrar con Google).
+ */
+export function isGoogleDriveAccessTokenExpiredError(message: string | null | undefined): boolean {
+  const m = (message ?? '').toLowerCase();
+  if (!m.trim()) return false;
+  if (m.includes('(status 401)')) {
+    if (m.includes('google drive') || m.includes('en drive') || m.includes('googleapis')) {
+      return true;
+    }
+  }
+  if (m.includes('invalid') && m.includes('grant') && m.includes('token')) {
+    return true;
+  }
+  return false;
+}
+

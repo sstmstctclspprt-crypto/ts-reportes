@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { useAuthStore } from './authStore';
 import {
   isGoogleDriveAccessError,
+  isGoogleDriveAccessTokenExpiredError,
   isSessionExpiredError,
   isSupabaseGatewayUnauthorized,
   SESSION_EXPIRED_SHORT
@@ -61,26 +62,10 @@ function cloneForIndexedDb<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** JWT de usuario listo para la puerta de Edge Functions (evita carrera tras refresh). */
-async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStore>): Promise<string> {
-  await auth.refreshSessionForApi({ force: true });
-  const { data: s1, error: e1 } = await supabase.auth.getSession();
-  if (e1) throw new Error(`Sesión: ${e1.message}`);
-  let token = s1.session?.access_token?.trim();
-  if (!token) {
-    await new Promise((r) => setTimeout(r, 120));
-    const { data: s2 } = await supabase.auth.getSession();
-    token = s2.session?.access_token?.trim();
-  }
-  if (!token) {
-    throw new Error('No hay sesión para generar el PDF. Vuelve a iniciar sesión.');
-  }
-  return token;
-}
-
 /**
- * Edge Function `generate-ctpat-pdf`: JWT Supabase + token OAuth de Google Drive.
- * Reintenta JWT Supabase ante 401 de puerta.
+ * Edge Function `generate-ctpat-pdf`: JWT Supabase + token OAuth de Google Drive
+ * (obtenidos juntos vía `getTokensForGenerateCtpatPdf` para alinear refresh).
+ * Reintenta ante 401 de la puerta Supabase o 401/invalid token de la API de Google.
  */
 /** Mensaje cuando Drive falla por token de Google caducado o permisos (texto estable para UI/cola). */
 export const GOOGLE_DRIVE_SYNC_USER_MESSAGE =
@@ -90,25 +75,19 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
   const auth = useAuthStore();
 
-  let jwt = await getSupabaseJwtForEdgeFunction(auth);
+  const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
+  if (!baseUrl) {
+    throw new Error('Falta VITE_SUPABASE_URL.');
+  }
+  if (!anonKey) {
+    throw new Error('Falta VITE_SUPABASE_ANON_KEY en el entorno de la app.');
+  }
 
-  const runOnce = async (userJwt: string): Promise<void> => {
-    const {
-      data: { session: oauthSession }
-    } = await supabase.auth.getSession();
-    const googleAccessToken = (oauthSession as { provider_token?: string })?.provider_token?.trim();
-    if (!googleAccessToken) {
-      throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
-    }
-
-    const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
-    if (!baseUrl) {
-      throw new Error('Falta VITE_SUPABASE_URL.');
-    }
-    if (!anonKey) {
-      throw new Error('Falta VITE_SUPABASE_ANON_KEY en el entorno de la app.');
-    }
-    const trimmedJwt = userJwt.trim();
+  const runOnce = async (forceTokenRefresh: boolean): Promise<void> => {
+    const { supabaseAccessToken, googleProviderAccessToken } = await auth.getTokensForGenerateCtpatPdf({
+      forceRefresh: forceTokenRefresh
+    });
+    const trimmedJwt = supabaseAccessToken.trim();
     if (!trimmedJwt) {
       throw new Error('No hay token de sesión para llamar a la función.');
     }
@@ -124,7 +103,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
       },
       body: JSON.stringify({
         registroId,
-        accessToken: googleAccessToken
+        accessToken: googleProviderAccessToken
       })
     });
 
@@ -155,13 +134,15 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      await runOnce(jwt);
+      // Primer intento: refresh completo. Reintentos: otra pasada (p. ej. token de Google o JWT de puerta recién rotados).
+      await runOnce(true);
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (isSupabaseGatewayUnauthorized(message) && attempt < 4) {
-        await auth.refreshSessionForApi({ force: true });
-        jwt = await getSupabaseJwtForEdgeFunction(auth);
+        continue;
+      }
+      if (isGoogleDriveAccessTokenExpiredError(message) && attempt < 4) {
         continue;
       }
       throw err;

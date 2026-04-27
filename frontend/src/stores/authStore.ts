@@ -25,6 +25,16 @@ const AUTH_CACHED_USER_ID_KEY = 'ts_ctpat_cached_user_id_v1';
  */
 let refreshSessionForApiMutex: Promise<Session | null> | null = null;
 
+/** Evita varios inserts concurrentes en `user_drive_config` (misma clave → 23505 y error en consola). */
+let ensureDriveConfigMutex: Promise<void> | null = null;
+
+function isPostgresUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  if (e?.code === '23505') return true;
+  const m = (e?.message ?? '').toLowerCase();
+  return m.includes('duplicate key') || m.includes('unique constraint');
+}
+
 /** `exp` del JWT (segundos UNIX). */
 function accessTokenExp(accessToken: string | undefined): number | null {
   if (!accessToken) return null;
@@ -143,6 +153,45 @@ export const useAuthStore = defineStore('auth', {
         return null;
       }
     },
+    /**
+     * Renueva la sesión y devuelve en un solo paso el JWT de Supabase y el
+     * `provider_token` de Google (scope Drive) usados por `generate-ctpat-pdf`.
+     * Evita carreras entre leer un token u otro tras un refresh parcial.
+     */
+    async getTokensForGenerateCtpatPdf(options?: { forceRefresh?: boolean }): Promise<{
+      supabaseAccessToken: string;
+      googleProviderAccessToken: string;
+    }> {
+      const force = options?.forceRefresh ?? true;
+      await this.refreshSessionForApi({ force });
+
+      const { data, error: e1 } = await supabase.auth.getSession();
+      if (e1) {
+        throw new Error(`Sesión: ${e1.message}`);
+      }
+      let session = data.session;
+      let supabaseToken = session?.access_token?.trim();
+      if (!supabaseToken) {
+        await new Promise((r) => setTimeout(r, 120));
+        const { data: d2, error: e2 } = await supabase.auth.getSession();
+        if (e2) {
+          throw new Error(`Sesión: ${e2.message}`);
+        }
+        session = d2.session;
+        supabaseToken = session?.access_token?.trim();
+      }
+      if (!supabaseToken) {
+        throw new Error('No hay sesión para generar el PDF. Vuelve a iniciar sesión.');
+      }
+      const googleToken = session?.provider_token?.trim();
+      if (!googleToken) {
+        throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
+      }
+      return {
+        supabaseAccessToken: supabaseToken,
+        googleProviderAccessToken: googleToken
+      };
+    },
     async getDriveConfigRow(userId: string) {
       const { data, error } = await supabase
         .from('user_drive_config')
@@ -188,7 +237,17 @@ export const useAuthStore = defineStore('auth', {
     },
     async ensureDriveConfigIfNeeded() {
       if (!this.userId) return;
+      if (!ensureDriveConfigMutex) {
+        ensureDriveConfigMutex = this.ensureDriveConfigIfNeededBody().finally(() => {
+          ensureDriveConfigMutex = null;
+        });
+      }
+      await ensureDriveConfigMutex;
+    },
+    async ensureDriveConfigIfNeededBody() {
+      if (!this.userId) return;
       try {
+        await this.refreshSessionForApi({ force: false });
         const existing = await this.getDriveConfigRow(this.userId);
         if (existing) {
           this.driveConfigReady = true;
@@ -208,6 +267,20 @@ export const useAuthStore = defineStore('auth', {
       try {
         await this.ensureUserStorageConfig();
       } catch (e) {
+        if (isPostgresUniqueViolation(e)) {
+          try {
+            await this.refreshSessionForApi({ force: false });
+            if (!this.userId) return;
+            const row = await this.getDriveConfigRow(this.userId);
+            if (row) {
+              this.driveConfigReady = true;
+              this.serviceLogoFile = row.service_logo_file ?? null;
+              return;
+            }
+          } catch (readErr) {
+            console.error('Error leyendo user_drive_config tras conflicto:', readErr);
+          }
+        }
         console.error('Error asegurando configuración de almacenamiento:', e);
         this.driveConfigReady = false;
         this.scheduleDriveConfigRetry();
@@ -276,11 +349,15 @@ export const useAuthStore = defineStore('auth', {
      * Crea fila en user_drive_config (logo) si no existe. La subida a Drive la hace la Edge Function.
      */
     async ensureUserStorageConfig() {
+      await this.refreshSessionForApi({ force: false });
       const {
         data: { session }
       } = await supabase.auth.getSession();
       const userId = session?.user?.id;
       if (!userId) return;
+      if (this.userId && userId !== this.userId) {
+        return;
+      }
 
       const existing = await this.getDriveConfigRow(userId);
 
@@ -305,7 +382,17 @@ export const useAuthStore = defineStore('auth', {
         service_logo_file: logoFile
       });
 
-      if (error) throw error;
+      if (error) {
+        if (isPostgresUniqueViolation(error)) {
+          const row = await this.getDriveConfigRow(userId);
+          if (row) {
+            this.driveConfigReady = true;
+            this.serviceLogoFile = row.service_logo_file ?? null;
+            return;
+          }
+        }
+        throw error;
+      }
       this.driveConfigReady = true;
       this.serviceLogoFile = logoFile;
     },
