@@ -134,8 +134,9 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      // Primer intento: refresh completo. Reintentos: otra pasada (p. ej. token de Google o JWT de puerta recién rotados).
-      await runOnce(true);
+      // Primer intento sin forzar refresh: conservar `provider_token` de Google.
+      // Reintentos tras 401: sí forzar para intentar renovar JWT / tokens.
+      await runOnce(attempt > 0);
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -386,7 +387,8 @@ export const useSyncStore = defineStore('sync', {
           return { hadError: false, skipped: true };
         }
 
-        let session = await authStore.refreshSessionForApi({ force: true });
+        // `force: true` aquí puede rotar la sesión y quitar `provider_token` de Google antes de Drive.
+        let session = await authStore.refreshSessionForApi({ force: false });
         if (!session?.access_token) {
           const {
             data: { session: fallback }

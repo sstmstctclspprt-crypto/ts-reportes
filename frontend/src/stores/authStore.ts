@@ -162,7 +162,10 @@ export const useAuthStore = defineStore('auth', {
       supabaseAccessToken: string;
       googleProviderAccessToken: string;
     }> {
-      const force = options?.forceRefresh ?? true;
+      // `force: true` en cada PDF suele llamar a `refreshSession` y GoTrue a menudo NO devuelve
+      // `provider_token` de Google en esa respuesta → "No hay token de Google Drive" / fallos Drive.
+      // Solo forzar cuando el caller lo pida explícitamente (p. ej. reintento tras 401).
+      const force = options?.forceRefresh ?? false;
       await this.refreshSessionForApi({ force });
 
       const { data, error: e1 } = await supabase.auth.getSession();
