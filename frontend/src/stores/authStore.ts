@@ -153,48 +153,6 @@ export const useAuthStore = defineStore('auth', {
         return null;
       }
     },
-    /**
-     * Renueva la sesión y devuelve en un solo paso el JWT de Supabase y el
-     * `provider_token` de Google (scope Drive) usados por `generate-ctpat-pdf`.
-     * Evita carreras entre leer un token u otro tras un refresh parcial.
-     */
-    async getTokensForGenerateCtpatPdf(options?: { forceRefresh?: boolean }): Promise<{
-      supabaseAccessToken: string;
-      googleProviderAccessToken: string;
-    }> {
-      // `force: true` en cada PDF suele llamar a `refreshSession` y GoTrue a menudo NO devuelve
-      // `provider_token` de Google en esa respuesta → "No hay token de Google Drive" / fallos Drive.
-      // Solo forzar cuando el caller lo pida explícitamente (p. ej. reintento tras 401).
-      const force = options?.forceRefresh ?? false;
-      await this.refreshSessionForApi({ force });
-
-      const { data, error: e1 } = await supabase.auth.getSession();
-      if (e1) {
-        throw new Error(`Sesión: ${e1.message}`);
-      }
-      let session = data.session;
-      let supabaseToken = session?.access_token?.trim();
-      if (!supabaseToken) {
-        await new Promise((r) => setTimeout(r, 120));
-        const { data: d2, error: e2 } = await supabase.auth.getSession();
-        if (e2) {
-          throw new Error(`Sesión: ${e2.message}`);
-        }
-        session = d2.session;
-        supabaseToken = session?.access_token?.trim();
-      }
-      if (!supabaseToken) {
-        throw new Error('No hay sesión para generar el PDF. Vuelve a iniciar sesión.');
-      }
-      const googleToken = session?.provider_token?.trim();
-      if (!googleToken) {
-        throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
-      }
-      return {
-        supabaseAccessToken: supabaseToken,
-        googleProviderAccessToken: googleToken
-      };
-    },
     async getDriveConfigRow(userId: string) {
       const { data, error } = await supabase
         .from('user_drive_config')
