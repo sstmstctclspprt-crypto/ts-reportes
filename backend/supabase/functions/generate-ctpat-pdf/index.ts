@@ -296,13 +296,19 @@ async function syncPdfToGoogleDrive(
     driveCfg = existingCfg;
   } else {
     const { pdfFolderId, imagesFolderId } = await ensureDriveFolders(accessToken);
+    const preserveLogo =
+      typeof existingCfg?.service_logo_file === 'string' && existingCfg.service_logo_file.trim().length > 0
+        ? existingCfg.service_logo_file.trim()
+        : undefined;
+
     const { data: upserted } = await supabaseServer
       .from('user_drive_config')
       .upsert(
         {
           user_id: uid,
           pdf_folder_id: pdfFolderId,
-          images_folder_id: imagesFolderId
+          images_folder_id: imagesFolderId,
+          ...(preserveLogo !== undefined ? { service_logo_file: preserveLogo } : {})
         },
         { onConflict: 'user_id' }
       )
@@ -333,11 +339,13 @@ async function syncPdfToGoogleDrive(
 
     // Si el parent guardado quedó inválido/desautorizado, reconstruimos estructura y persistimos IDs frescos.
     const { pdfFolderId, imagesFolderId } = await ensureDriveFolders(accessToken);
+    const cfgBeforeRecover = existingCfg?.service_logo_file?.trim();
     await supabaseServer.from('user_drive_config').upsert(
       {
         user_id: uid,
         pdf_folder_id: pdfFolderId,
-        images_folder_id: imagesFolderId
+        images_folder_id: imagesFolderId,
+        ...(cfgBeforeRecover ? { service_logo_file: cfgBeforeRecover } : {})
       },
       { onConflict: 'user_id' }
     );
@@ -595,7 +603,10 @@ async function buildPdf(
   ).replace(/\/$/, '');
 
   async function loadImage(path: string) {
-    const lower = path.toLowerCase();
+    const trimmed = path.replace(/^\/+/, '').trim();
+    if (!trimmed) return null;
+
+    const lower = trimmed.toLowerCase();
     const isPng = lower.endsWith('.png');
     const isJpg = lower.endsWith('.jpg') || lower.endsWith('.jpeg');
     const tryEmbed = async (bytes: Uint8Array) => {
@@ -604,44 +615,53 @@ async function buildPdf(
       return await pdfDoc.embedPng(bytes).catch(() => pdfDoc.embedJpg(bytes));
     };
 
-    // 1) Desde URL (Supabase Storage público o LOGO_BASE_URL)
+    // 1) Service role primero: logos de usuario (`logos/<user_id>.png`) y rutas con carpetas.
+    // El fetch público desde Edge a veces falla (DNS/red); la descarga con la misma clave sí funciona.
+    if (supabaseStorage) {
+      try {
+        const { data: blob, error: dlErr } = await supabaseStorage.storage.from(LOGO_BUCKET).download(trimmed);
+        if (!dlErr && blob) {
+          const buf = await blob.arrayBuffer();
+          return await tryEmbed(new Uint8Array(buf));
+        }
+        if (dlErr) {
+          console.warn('loadImage storage.download:', trimmed, dlErr.message);
+        }
+      } catch (e) {
+        console.warn('loadImage storage.download failed:', trimmed, e);
+      }
+    }
+
+    // 2) URL pública (Supabase Storage o LOGO_BASE_URL)
     if (logoBaseUrl) {
       try {
-        const url = `${logoBaseUrl}/${path}`;
+        const encodedPath = trimmed
+          .split('/')
+          .filter(Boolean)
+          .map((seg) => encodeURIComponent(seg))
+          .join('/');
+        const url = `${logoBaseUrl}/${encodedPath}`;
         const res = await fetch(url);
         if (res.ok) {
           const buf = await res.arrayBuffer();
           return await tryEmbed(new Uint8Array(buf));
         }
       } catch (e) {
-        console.warn('loadImage fetch failed:', path, e);
+        console.warn('loadImage fetch failed:', trimmed, e);
       }
     }
 
-    // 1b) Service role: descarga desde Storage (bucket privado o fallo de URL pública)
-    if (supabaseStorage) {
-      try {
-        const { data: blob, error: dlErr } = await supabaseStorage.storage.from(LOGO_BUCKET).download(path);
-        if (!dlErr && blob) {
-          const buf = await blob.arrayBuffer();
-          return await tryEmbed(new Uint8Array(buf));
-        }
-      } catch (e) {
-        console.warn('loadImage storage.download failed:', path, e);
-      }
-    }
-
-    // 2) Desde archivos locales (./assets o cwd/assets)
+    // 3) Archivos locales (./assets o cwd/assets)
     try {
-      const url = new URL(`./assets/${path}`, import.meta.url);
+      const url = new URL(`./assets/${trimmed}`, import.meta.url);
       const data = await Deno.readFile(url);
       return await tryEmbed(data);
     } catch {
       try {
-        const data = await Deno.readFile(`${Deno.cwd()}/assets/${path}`);
+        const data = await Deno.readFile(`${Deno.cwd()}/assets/${trimmed}`);
         return await tryEmbed(data);
       } catch (e) {
-        console.warn('loadImage file failed:', path, e);
+        console.warn('loadImage file failed:', trimmed, e);
         return null;
       }
     }
