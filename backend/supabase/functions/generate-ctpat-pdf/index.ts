@@ -355,14 +355,16 @@ async function syncPdfToGoogleDrive(
   }
 }
 
-const POWER_AUTOMATE_CTPAT_WEBHOOK_URL = Deno.env.get('POWER_AUTOMATE_CTPAT_WEBHOOK_URL')?.trim() ?? '';
-const POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET = Deno.env.get('POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET')?.trim() ?? '';
-/** Enlace de carpeta OneDrive (p. ej. https://1drv.ms/f/... ) para que el flujo sepa dónde crear archivos; opcional. */
-const POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL =
-  Deno.env.get('POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL')?.trim() ?? '';
+type PowerAutomateNotifyResult =
+  | 'skipped_no_webhook_url'
+  | 'skipped_signed_url_failed'
+  | 'delivered'
+  | 'http_error'
+  | 'network_error';
 
 /**
  * Notifica a Power Automate (HTTP trigger) para copiar el PDF a OneDrive u otros destinos.
+ * Los secrets se leen en cada llamada (no al importar el módulo) para que Supabase los aplique bien.
  * Opcional: si POWER_AUTOMATE_CTPAT_WEBHOOK_URL no está definida, no hace nada.
  * Fallos solo se registran en log; no afectan Google Drive ni Storage.
  */
@@ -374,8 +376,17 @@ async function notifyPowerAutomateCtPatPdfReady(params: {
   userId: string;
   storagePath: string;
   driveFileId: string | null;
-}): Promise<void> {
-  if (!POWER_AUTOMATE_CTPAT_WEBHOOK_URL) return;
+}): Promise<PowerAutomateNotifyResult> {
+  const webhookUrl = Deno.env.get('POWER_AUTOMATE_CTPAT_WEBHOOK_URL')?.trim() ?? '';
+  if (!webhookUrl) {
+    console.warn(
+      '[generate-ctpat-pdf] Power Automate: defina el secret POWER_AUTOMATE_CTPAT_WEBHOOK_URL en el proyecto (Edge Functions → Secrets).'
+    );
+    return 'skipped_no_webhook_url';
+  }
+
+  const webhookSecret = Deno.env.get('POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET')?.trim() ?? '';
+  const onedriveFolderShareUrl = Deno.env.get('POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL')?.trim() ?? '';
 
   const { data: signed, error: signErr } = await params.supabaseServer.storage
     .from(PDF_STORAGE_BUCKET)
@@ -383,7 +394,7 @@ async function notifyPowerAutomateCtPatPdfReady(params: {
 
   if (signErr || !signed?.signedUrl) {
     console.warn('[generate-ctpat-pdf] Power Automate: createSignedUrl falló', signErr?.message ?? 'sin URL');
-    return;
+    return 'skipped_signed_url_failed';
   }
 
   const body = {
@@ -395,7 +406,7 @@ async function notifyPowerAutomateCtPatPdfReady(params: {
     storagePath: params.storagePath,
     pdfDownloadUrl: signed.signedUrl,
     driveFileId: params.driveFileId,
-    onedriveFolderShareUrl: POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL || null
+    onedriveFolderShareUrl: onedriveFolderShareUrl || null
   };
 
   const controller = new AbortController();
@@ -403,23 +414,27 @@ async function notifyPowerAutomateCtPatPdfReady(params: {
 
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET) {
-      headers['X-Webhook-Secret'] = POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      headers['X-Webhook-Secret'] = webhookSecret;
     }
 
-    const res = await fetch(POWER_AUTOMATE_CTPAT_WEBHOOK_URL, {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: controller.signal
     });
 
-    if (!res.ok) {
-      const t = await res.text();
-      console.warn('[generate-ctpat-pdf] Power Automate webhook HTTP', res.status, t.slice(0, 500));
+    if (res.ok) {
+      console.log('[generate-ctpat-pdf] Power Automate webhook OK', { registroId: params.registroId });
+      return 'delivered';
     }
+    const t = await res.text();
+    console.warn('[generate-ctpat-pdf] Power Automate webhook HTTP', res.status, t.slice(0, 500));
+    return 'http_error';
   } catch (e) {
     console.warn('[generate-ctpat-pdf] Power Automate webhook:', e instanceof Error ? e.message : String(e));
+    return 'network_error';
   } finally {
     clearTimeout(kill);
   }
@@ -2461,8 +2476,9 @@ Deno.serve(async (req) => {
       .eq('id', data.id)
       .eq('user_id', data.user_id);
 
+    let powerAutomate: PowerAutomateNotifyResult | 'skipped_storage_failed' = 'skipped_storage_failed';
     if (storagePathSaved) {
-      await notifyPowerAutomateCtPatPdfReady({
+      powerAutomate = await notifyPowerAutomateCtPatPdfReady({
         supabaseServer,
         fileName,
         registroId: data.id,
@@ -2479,7 +2495,9 @@ Deno.serve(async (req) => {
         storagePath: storagePathSaved,
         driveSynced: true,
         needsDriveSync: false,
-        driveFile: { id: driveItemId }
+        driveFile: { id: driveItemId },
+        /** Diagnóstico: revisar en Red del navegador si OneDrive no recibe el archivo. */
+        powerAutomate
       }),
       {
         status: 200,
