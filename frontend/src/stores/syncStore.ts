@@ -47,7 +47,7 @@ interface SyncState {
 export interface ProcessQueueResult {
   hadError: boolean;
   lastError?: string;
-  /** Cola vacía, offline, o ya se estaba procesando */
+  /** Cola vac?a, offline, o ya se estaba procesando */
   skipped: boolean;
 }
 
@@ -65,7 +65,7 @@ function cloneForIndexedDb<T>(value: T): T {
 async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStore>): Promise<string> {
   await auth.refreshSessionForApi({ force: true });
   const { data: s1, error: e1 } = await supabase.auth.getSession();
-  if (e1) throw new Error(`Sesión: ${e1.message}`);
+  if (e1) throw new Error(`Sesi?n: ${e1.message}`);
   let token = s1.session?.access_token?.trim();
   if (!token) {
     await new Promise((r) => setTimeout(r, 120));
@@ -73,7 +73,7 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
     token = s2.session?.access_token?.trim();
   }
   if (!token) {
-    throw new Error('No hay sesión para generar el PDF. Vuelve a iniciar sesión.');
+    throw new Error('No hay sesi?n para generar el PDF. Vuelve a iniciar sesi?n.');
   }
   return token;
 }
@@ -81,12 +81,12 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
 /**
  * Edge Function `generate-ctpat-pdf`: JWT Supabase + token OAuth de Google Drive.
  * Importante: leer `provider_token` con `getSession()` ANTES de forzar refresh del JWT de Supabase;
- * si no, GoTrue a menudo devuelve sesión sin `provider_token` y Drive falla.
+ * si no, GoTrue a menudo devuelve sesi?n sin `provider_token` y Drive falla.
  * Reintenta solo ante 401 de puerta (JWT Supabase).
  */
 /** Mensaje cuando Drive falla por token de Google caducado o permisos (texto estable para UI/cola). */
 export const GOOGLE_DRIVE_SYNC_USER_MESSAGE =
-  'Error al subir a Google Drive. Si llevas la sesión abierta mucho tiempo, cierra sesión e inicia otra vez con Google; si sigue igual, revisa permisos de Drive en tu cuenta.';
+  'Error al subir a Google Drive. Si llevas la sesi?n abierta mucho tiempo, cierra sesi?n e inicia otra vez con Google; si sigue igual, revisa permisos de Drive en tu cuenta.';
 
 async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
@@ -97,7 +97,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   } = await supabase.auth.getSession();
   const googleAccessToken = oauthSession?.provider_token?.trim();
   if (!googleAccessToken) {
-    throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
+    throw new Error('No hay token de Google Drive. Cierra sesi?n y vuelve a iniciar con Google.');
   }
 
   let jwt = await getSupabaseJwtForEdgeFunction(auth);
@@ -113,7 +113,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const runOnce = async (userJwt: string): Promise<void> => {
     const trimmedJwt = userJwt.trim();
     if (!trimmedJwt) {
-      throw new Error('No hay token de sesión para llamar a la función.');
+      throw new Error('No hay token de sesi?n para llamar a la funci?n.');
     }
 
     const url = `${baseUrl}/functions/v1/generate-ctpat-pdf`;
@@ -135,8 +135,8 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
     if (!res.ok) {
       let detail = text;
       try {
-        const j = JSON.parse(text) as { message?: string; code?: number };
-        const inner = j?.message ?? text;
+        const j = JSON.parse(text) as { message?: string; error?: string; code?: number };
+        const inner = j?.error ?? j?.message ?? text;
         detail = `HTTP ${res.status}: ${inner}`;
       } catch {
         detail = text ? `HTTP ${res.status}: ${text}` : `HTTP ${res.status}`;
@@ -152,7 +152,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
       return;
     }
     if (parsed.ok === false) {
-      throw new Error(parsed.error ?? 'Error en función');
+      throw new Error(parsed.error ?? 'Error en funci?n');
     }
   };
 
@@ -174,8 +174,8 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
 }
 
 function shouldInvalidateLocalSession(message: string): boolean {
-  // Mantener sesión local salvo errores reales de autenticación Supabase.
-  // Errores de Google Drive no deben cerrar sesión Supabase.
+  // Mantener sesi?n local salvo errores reales de autenticaci?n Supabase.
+  // Errores de Google Drive no deben cerrar sesi?n Supabase.
   if (isSessionExpiredError(message)) return true;
   const m = message.toLowerCase();
   return (
@@ -342,9 +342,9 @@ export const useSyncStore = defineStore('sync', {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(this.history));
     },
     /**
-     * JWT inválido (p. ej. usuario borrado en Supabase, refresh revocado): limpia cola local y cierra sesión.
+     * JWT inv?lido (p. ej. usuario borrado en Supabase, refresh revocado): limpia cola local y cierra sesi?n.
      */
-    /** Cierra sesión sin toast (el caller muestra un solo mensaje claro). */
+    /** Cierra sesi?n sin toast (el caller muestra un solo mensaje claro). */
     async handleSessionInvalidated() {
       this.clearRetryTimer();
       this.retryAttempt = 0;
@@ -408,7 +408,7 @@ export const useSyncStore = defineStore('sync', {
           return { hadError: false, skipped: true };
         }
 
-        // Leer sesión sin renovar JWT salvo que falte access_token: renovar aquí suele borrar
+        // Leer sesi?n sin renovar JWT salvo que falte access_token: renovar aqu? suele borrar
         // `provider_token` de Google antes de que la cola llame a `invokeGenerateCtpatPdf`.
         const {
           data: { session: sessionFromStorage }
@@ -424,7 +424,7 @@ export const useSyncStore = defineStore('sync', {
           return {
             hadError: true,
             lastError:
-              'No se pudo validar la sesión para sincronizar. Comprueba la conexión o vuelve a iniciar sesión.',
+              'No se pudo validar la sesi?n para sincronizar. Comprueba la conexi?n o vuelve a iniciar sesi?n.',
             skipped: false
           };
         }
@@ -497,7 +497,7 @@ export const useSyncStore = defineStore('sync', {
                 }
               }
               if (folioErr || !folioData) {
-                throw new Error(`No se pudo generar folio automático: ${folioErr?.message ?? 'sin detalle'}`);
+                throw new Error(`No se pudo generar folio autom?tico: ${folioErr?.message ?? 'sin detalle'}`);
               }
 
               const folioAuto = folioData as string;
@@ -540,6 +540,9 @@ export const useSyncStore = defineStore('sync', {
             }
           } catch (err) {
             const rawMessage = err instanceof Error ? err.message : String(err);
+            // El toast a veces sustituye por mensaje gen?rico; el detalle real va a consola.
+            // eslint-disable-next-line no-console
+            console.error('[syncStore] error al guardar / generar PDF (detalle t?cnico):', rawMessage);
             const message = isGoogleDriveAccessError(rawMessage)
               ? GOOGLE_DRIVE_SYNC_USER_MESSAGE
               : rawMessage;
@@ -594,7 +597,7 @@ export const useSyncStore = defineStore('sync', {
       for (const item of this.queue) {
         if (item.status === 'error') {
           const msg = (item.lastError ?? '').toLowerCase();
-          // Errores funcionales (requiere acción del usuario) no se reintentan automáticamente.
+          // Errores funcionales (requiere acci?n del usuario) no se reintentan autom?ticamente.
           if (msg.includes('template requerida') || msg.includes('plantilla pdf')) {
             continue;
           }
