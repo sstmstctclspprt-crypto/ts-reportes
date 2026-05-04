@@ -355,6 +355,76 @@ async function syncPdfToGoogleDrive(
   }
 }
 
+const POWER_AUTOMATE_CTPAT_WEBHOOK_URL = Deno.env.get('POWER_AUTOMATE_CTPAT_WEBHOOK_URL')?.trim() ?? '';
+const POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET = Deno.env.get('POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET')?.trim() ?? '';
+/** Enlace de carpeta OneDrive (p. ej. https://1drv.ms/f/... ) para que el flujo sepa dónde crear archivos; opcional. */
+const POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL =
+  Deno.env.get('POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL')?.trim() ?? '';
+
+/**
+ * Notifica a Power Automate (HTTP trigger) para copiar el PDF a OneDrive u otros destinos.
+ * Opcional: si POWER_AUTOMATE_CTPAT_WEBHOOK_URL no está definida, no hace nada.
+ * Fallos solo se registran en log; no afectan Google Drive ni Storage.
+ */
+async function notifyPowerAutomateCtPatPdfReady(params: {
+  supabaseServer: ReturnType<typeof createClient>;
+  fileName: string;
+  registroId: string;
+  organizationId: string | null;
+  userId: string;
+  storagePath: string;
+  driveFileId: string | null;
+}): Promise<void> {
+  if (!POWER_AUTOMATE_CTPAT_WEBHOOK_URL) return;
+
+  const { data: signed, error: signErr } = await params.supabaseServer.storage
+    .from(PDF_STORAGE_BUCKET)
+    .createSignedUrl(params.storagePath, 3600);
+
+  if (signErr || !signed?.signedUrl) {
+    console.warn('[generate-ctpat-pdf] Power Automate: createSignedUrl falló', signErr?.message ?? 'sin URL');
+    return;
+  }
+
+  const body = {
+    event: 'ctpat_pdf_ready',
+    fileName: params.fileName,
+    registroId: params.registroId,
+    organizationId: params.organizationId,
+    userId: params.userId,
+    storagePath: params.storagePath,
+    pdfDownloadUrl: signed.signedUrl,
+    driveFileId: params.driveFileId,
+    onedriveFolderShareUrl: POWER_AUTOMATE_CTPAT_ONEDRIVE_FOLDER_URL || null
+  };
+
+  const controller = new AbortController();
+  const kill = setTimeout(() => controller.abort(), 15_000);
+
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET) {
+      headers['X-Webhook-Secret'] = POWER_AUTOMATE_CTPAT_WEBHOOK_SECRET;
+    }
+
+    const res = await fetch(POWER_AUTOMATE_CTPAT_WEBHOOK_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      const t = await res.text();
+      console.warn('[generate-ctpat-pdf] Power Automate webhook HTTP', res.status, t.slice(0, 500));
+    }
+  } catch (e) {
+    console.warn('[generate-ctpat-pdf] Power Automate webhook:', e instanceof Error ? e.message : String(e));
+  } finally {
+    clearTimeout(kill);
+  }
+}
+
 /** Soporta data URL legacy o ruta privada en Supabase Storage. */
 async function embedEvidenceImage(
   pdfDoc: PDFDocument,
@@ -2390,6 +2460,18 @@ Deno.serve(async (req) => {
       })
       .eq('id', data.id)
       .eq('user_id', data.user_id);
+
+    if (storagePathSaved) {
+      await notifyPowerAutomateCtPatPdfReady({
+        supabaseServer,
+        fileName,
+        registroId: data.id,
+        organizationId: data.organization_id,
+        userId: data.user_id!,
+        storagePath: storagePathSaved,
+        driveFileId: driveItemId
+      });
+    }
 
     return new Response(
       JSON.stringify({
