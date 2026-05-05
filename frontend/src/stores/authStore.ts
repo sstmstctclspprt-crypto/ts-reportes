@@ -15,6 +15,8 @@ interface AuthState {
   driveConfigRetryScheduled: boolean;
   /** Nombre de archivo del logo de servicio (p. ej. danfoss.png), desde user_drive_config */
   serviceLogoFile: string | null;
+  /** Subcarpeta legible para copias OneDrive/Power Automate; si está vacío el servidor usa el id de usuario */
+  onedriveSubfolderName: string | null;
 }
 
 const AUTH_CACHED_USER_ID_KEY = 'ts_ctpat_cached_user_id_v1';
@@ -74,6 +76,17 @@ export function normalizeServiceLogoFile(v: string | null): string {
   return `${s}.png`;
 }
 
+/** Nombre seguro para carpeta OneDrive/SharePoint (sin caracteres prohibidos). */
+export function sanitizeOnedriveSubfolderName(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  let s = raw.toString().trim();
+  if (!s) return null;
+  s = s.replace(/[\u0000-\u001f\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  if (s.length > 120) s = s.slice(0, 120).trim();
+  return s;
+}
+
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     isSignedIn: false,
@@ -83,7 +96,8 @@ export const useAuthStore = defineStore('auth', {
     loading: false,
     driveConfigReady: false,
     driveConfigRetryScheduled: false,
-    serviceLogoFile: null
+    serviceLogoFile: null,
+    onedriveSubfolderName: null
   }),
   actions: {
     /**
@@ -156,7 +170,7 @@ export const useAuthStore = defineStore('auth', {
     async getDriveConfigRow(userId: string) {
       const { data, error } = await supabase
         .from('user_drive_config')
-        .select('pdf_folder_id, images_folder_id, service_logo_file')
+        .select('pdf_folder_id, images_folder_id, service_logo_file, onedrive_subfolder_name')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -176,6 +190,7 @@ export const useAuthStore = defineStore('auth', {
         if (cfg) {
           this.driveConfigReady = true;
           this.serviceLogoFile = cfg.service_logo_file ?? null;
+          this.onedriveSubfolderName = cfg.onedrive_subfolder_name?.trim() || null;
         } else {
           await this.ensureDriveConfigIfNeeded();
         }
@@ -197,6 +212,17 @@ export const useAuthStore = defineStore('auth', {
 
       this.serviceLogoFile = objectPath;
       return objectPath;
+    },
+    async saveOnedriveSubfolderLabel(raw: string) {
+      if (!this.userId) throw new Error('No hay usuario autenticado.');
+      const sanitized = sanitizeOnedriveSubfolderName(raw);
+      await this.ensureDriveConfigIfNeeded();
+      const { error } = await supabase
+        .from('user_drive_config')
+        .update({ onedrive_subfolder_name: sanitized })
+        .eq('user_id', this.userId);
+      if (error) throw new Error(`No se pudo guardar el nombre de carpeta: ${error.message}`);
+      this.onedriveSubfolderName = sanitized;
     },
     scheduleDriveConfigRetry() {
       if (this.driveConfigRetryScheduled) return;
@@ -226,6 +252,7 @@ export const useAuthStore = defineStore('auth', {
         if (existing) {
           this.driveConfigReady = true;
           this.serviceLogoFile = existing.service_logo_file ?? null;
+          this.onedriveSubfolderName = existing.onedrive_subfolder_name?.trim() || null;
           return;
         }
       } catch (e) {
@@ -248,6 +275,7 @@ export const useAuthStore = defineStore('auth', {
             if (row) {
               this.driveConfigReady = true;
               this.serviceLogoFile = row.service_logo_file ?? null;
+              this.onedriveSubfolderName = row.onedrive_subfolder_name?.trim() || null;
               return;
             }
           } catch (readErr) {
@@ -297,6 +325,7 @@ export const useAuthStore = defineStore('auth', {
           this.email = null;
           this.displayName = null;
           this.serviceLogoFile = null;
+          this.onedriveSubfolderName = null;
           localStorage.removeItem(AUTH_CACHED_USER_ID_KEY);
         }
       } catch (e) {
@@ -307,6 +336,7 @@ export const useAuthStore = defineStore('auth', {
           this.email = null;
           this.displayName = null;
           this.serviceLogoFile = null;
+          this.onedriveSubfolderName = null;
           localStorage.removeItem(AUTH_CACHED_USER_ID_KEY);
         } else {
           this.isSignedIn = !!this.userId;
@@ -336,6 +366,7 @@ export const useAuthStore = defineStore('auth', {
       if (existing) {
         this.driveConfigReady = true;
         this.serviceLogoFile = existing.service_logo_file ?? null;
+        this.onedriveSubfolderName = existing.onedrive_subfolder_name?.trim() || null;
         return;
       }
 
@@ -360,6 +391,7 @@ export const useAuthStore = defineStore('auth', {
           if (row) {
             this.driveConfigReady = true;
             this.serviceLogoFile = row.service_logo_file ?? null;
+            this.onedriveSubfolderName = row.onedrive_subfolder_name?.trim() || null;
             return;
           }
         }
@@ -367,6 +399,7 @@ export const useAuthStore = defineStore('auth', {
       }
       this.driveConfigReady = true;
       this.serviceLogoFile = logoFile;
+      this.onedriveSubfolderName = null;
     },
     async signInWithGoogle() {
       this.loading = true;
@@ -406,6 +439,7 @@ export const useAuthStore = defineStore('auth', {
       this.email = null;
       this.displayName = null;
       this.serviceLogoFile = null;
+      this.onedriveSubfolderName = null;
       localStorage.removeItem(AUTH_CACHED_USER_ID_KEY);
     },
     /**

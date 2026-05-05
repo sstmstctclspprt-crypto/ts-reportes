@@ -40,6 +40,34 @@
           Nuevo registro
         </button>
       </div>
+      <div class="mt-4 w-full max-w-xl rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-3">
+        <p class="text-xs font-semibold text-slate-800">
+          Carpeta en OneDrive (respaldo)
+        </p>
+        <p class="text-xs text-slate-500 mt-1 leading-snug">
+          Escribe un nombre para tu subcarpeta; Power Automate debe usar el campo
+          <code class="text-[11px] bg-white px-1 rounded border border-slate-200">onedriveSubfolder</code>
+          en la ruta. Si lo dejas vacío, se usa tu id de usuario.
+        </p>
+        <div class="mt-2 flex flex-col sm:flex-row gap-2 sm:items-center">
+          <input
+            v-model="onedriveFolderDraft"
+            type="text"
+            maxlength="120"
+            autocomplete="off"
+            placeholder="Ej. Transportes López"
+            class="flex-1 min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-tactical-blue/30 focus:border-tactical-blue"
+          />
+          <button
+            type="button"
+            class="btn-secondary shrink-0 whitespace-nowrap"
+            :disabled="savingOnedriveFolder"
+            @click="saveOnedriveFolderDraft"
+          >
+            {{ savingOnedriveFolder ? 'Guardando…' : 'Guardar nombre' }}
+          </button>
+        </div>
+      </div>
     </section>
 
     <section
@@ -235,6 +263,16 @@ const loadingRegistros = ref(false);
 const uploadingLogo = ref(false);
 const logoInputRef = ref<HTMLInputElement | null>(null);
 const cameraBlockedBanner = ref(false);
+const onedriveFolderDraft = ref('');
+const savingOnedriveFolder = ref(false);
+
+watch(
+  () => authStore.onedriveSubfolderName,
+  (v) => {
+    onedriveFolderDraft.value = v ?? '';
+  },
+  { immediate: true }
+);
 
 function refreshCameraBlockedBanner() {
   cameraBlockedBanner.value = hasRegistroCameraBlockedHint();
@@ -397,6 +435,21 @@ function goNew() {
 
 function triggerLogoPicker() {
   logoInputRef.value?.click();
+}
+
+async function saveOnedriveFolderDraft() {
+  savingOnedriveFolder.value = true;
+  try {
+    await authStore.saveOnedriveSubfolderLabel(onedriveFolderDraft.value);
+    toastStore.success(
+      'Carpeta guardada',
+      'Los próximos PDF enviarán este nombre a Power Automate como onedriveSubfolder.'
+    );
+  } catch (e) {
+    toastStore.error('Carpeta', e instanceof Error ? e.message : 'No se pudo guardar.');
+  } finally {
+    savingOnedriveFolder.value = false;
+  }
 }
 
 async function onPickLogo(event: Event) {

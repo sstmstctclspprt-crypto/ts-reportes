@@ -276,6 +276,49 @@ async function ensureUserLogoRow(
   };
 }
 
+async function logoExistsInBucket(
+  supabaseServer: ReturnType<typeof createClient>,
+  logoPath: string
+): Promise<boolean> {
+  const normalized = logoPath.trim().replace(/^\/+/, '');
+  if (!normalized) return false;
+  const { data, error } = await supabaseServer.storage.from(Deno.env.get('LOGO_BUCKET') ?? 'ctpat-logs').download(normalized);
+  if (error || !data) return false;
+  return true;
+}
+
+/**
+ * Resuelve logo de servicio robustamente:
+ * 1) usa el valor de BD si existe físicamente
+ * 2) detecta logos/<user_id>.png|jpg|jpeg aunque BD esté desfasada
+ * 3) sincroniza el valor encontrado a user_drive_config
+ */
+async function resolveUserLogoForPdf(
+  supabaseServer: ReturnType<typeof createClient>,
+  userId: string,
+  configuredLogo: string | null | undefined
+): Promise<string | null> {
+  const configured = configuredLogo?.trim() ?? '';
+  if (configured && (await logoExistsInBucket(supabaseServer, configured))) {
+    return configured;
+  }
+
+  const fallbacks = [`logos/${userId}.png`, `logos/${userId}.jpg`, `logos/${userId}.jpeg`];
+  for (const candidate of fallbacks) {
+    if (await logoExistsInBucket(supabaseServer, candidate)) {
+      if (configured !== candidate) {
+        await supabaseServer
+          .from('user_drive_config')
+          .update({ service_logo_file: candidate })
+          .eq('user_id', userId);
+      }
+      return candidate;
+    }
+  }
+
+  return configured || null;
+}
+
 async function syncPdfToGoogleDrive(
   supabaseServer: ReturnType<typeof createClient>,
   data: RegistroRow,
@@ -362,6 +405,16 @@ type PowerAutomateNotifyResult =
   | 'http_error'
   | 'network_error';
 
+function sanitizeOnedriveSubfolderName(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  let s = raw.toString().trim();
+  if (!s) return null;
+  s = s.replace(/[\u0000-\u001f\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  if (s.length > 120) s = s.slice(0, 120).trim();
+  return s;
+}
+
 /**
  * Notifica a Power Automate (HTTP trigger) para copiar el PDF a OneDrive u otros destinos.
  * Los secrets se leen en cada llamada (no al importar el módulo) para que Supabase los aplique bien.
@@ -397,12 +450,22 @@ async function notifyPowerAutomateCtPatPdfReady(params: {
     return 'skipped_signed_url_failed';
   }
 
+  const { data: udcSub } = await params.supabaseServer
+    .from('user_drive_config')
+    .select('onedrive_subfolder_name')
+    .eq('user_id', params.userId)
+    .maybeSingle();
+  const customSub = sanitizeOnedriveSubfolderName(udcSub?.onedrive_subfolder_name ?? null);
+  const onedriveSubfolder = customSub ?? params.userId;
+
   const body = {
     event: 'ctpat_pdf_ready',
     fileName: params.fileName,
     registroId: params.registroId,
     organizationId: params.organizationId,
     userId: params.userId,
+    /** Usar en Power Automate como segmento de carpeta (nombre legible); si no hay valor en BD = userId */
+    onedriveSubfolder,
     storagePath: params.storagePath,
     pdfDownloadUrl: signed.signedUrl,
     driveFileId: params.driveFileId,
@@ -2432,12 +2495,13 @@ Deno.serve(async (req) => {
 
     const finalDriveCfg = await ensureUserLogoRow(supabaseServer, data.user_id, userMeta);
 
-    const resolvedCenterLogo = (() => {
+    const logoFromConfig = (() => {
       const d = finalDriveCfg?.service_logo_file?.trim();
       if (d) return d;
       const m = logoFromUserMetadata(userMeta);
-      return m ? normalizeServiceLogoFile(m) : 'logo.png';
+      return m ? normalizeServiceLogoFile(m) : null;
     })();
+    const resolvedCenterLogo = await resolveUserLogoForPdf(supabaseServer, data.user_id, logoFromConfig);
 
     const pdfBytes = await buildPdf(data, resolvedCenterLogo, supabaseServer);
 
