@@ -370,8 +370,10 @@ export const useAuthStore = defineStore('auth', {
     },
     async signInWithGoogle() {
       this.loading = true;
+      // Usar el origen real de la pestaña evita errores OAuth 400 cuando VITE_SITE_URL
+      // quedó apuntando a localhost en un despliegue remoto.
       const rawSiteUrl =
-        (import.meta.env.VITE_SITE_URL as string | undefined) ?? window.location.origin;
+        window.location.origin || (import.meta.env.VITE_SITE_URL as string | undefined) || '';
       const redirectTo = rawSiteUrl.replace(/\/$/, '');
 
       try {
