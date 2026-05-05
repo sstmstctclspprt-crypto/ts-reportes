@@ -288,28 +288,45 @@ export const useSyncStore = defineStore('sync', {
       }, ms);
     },
     /**
-     * Comprueba si Supabase responde (no basta con navigator.onLine: hay redes “colgadas”).
+     * Estado de red para la UI y la cola.
+     * - Si el navegador reporta offline → offline.
+     * - Si reporta online, intentamos un ping liviano a Supabase; si falla (proxy, firewall,
+     *   timeout, respuesta no 2xx) NO forzamos “sin conexión”: muchas redes bloquean /auth/v1/health
+     *   pero el resto (REST, Edge) sí funciona.
      */
     async updateConnectivity() {
-      const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
-      if (!base) {
-        this.connectivity = navigator.onLine ? 'online' : 'offline';
+      if (!navigator.onLine) {
+        this.connectivity = 'offline';
         return;
       }
+
+      const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
+      if (!base) {
+        this.connectivity = 'online';
+        return;
+      }
+
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 4500);
+      const timer = window.setTimeout(() => controller.abort(), 6500);
       try {
+        const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
         const res = await fetch(`${base}/auth/v1/health`, {
           method: 'GET',
           cache: 'no-store',
-          signal: controller.signal
+          signal: controller.signal,
+          headers: anon ? { apikey: anon } : {}
         });
-        this.connectivity = res.ok ? 'online' : 'offline';
+        if (res.ok) {
+          this.connectivity = 'online';
+          return;
+        }
       } catch {
-        this.connectivity = 'offline';
+        /* timeout, DNS, CORS raro, etc. */
       } finally {
         window.clearTimeout(timer);
       }
+
+      this.connectivity = 'online';
     },
     async loadFromStorage() {
       try {
