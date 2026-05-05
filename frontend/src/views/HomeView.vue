@@ -400,14 +400,14 @@ async function loadRegistros() {
     );
     for (const row of pendingDriveSync) {
       if (row?.id) {
-        syncStore.enqueueGeneratePdf({
+        await syncStore.enqueueGeneratePdf({
           registroId: row.id,
           folio: row.folio_pdf ?? undefined
         });
       }
     }
     if (pendingDriveSync.length > 0) {
-      void syncStore.processQueue();
+      await syncStore.processQueue();
     }
   }
   loadingRegistros.value = false;

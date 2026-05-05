@@ -48,7 +48,7 @@ interface SyncState {
 export interface ProcessQueueResult {
   hadError: boolean;
   lastError?: string;
-  /** Cola vac?a, offline, o ya se estaba procesando */
+  /** Cola vacía, sin red a Supabase, o ya se estaba procesando */
   skipped: boolean;
 }
 
@@ -66,7 +66,7 @@ function cloneForIndexedDb<T>(value: T): T {
 async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStore>): Promise<string> {
   await auth.refreshSessionForApi({ force: true });
   const { data: s1, error: e1 } = await supabase.auth.getSession();
-  if (e1) throw new Error(`Sesi?n: ${e1.message}`);
+  if (e1) throw new Error(`Sesión: ${e1.message}`);
   let token = s1.session?.access_token?.trim();
   if (!token) {
     await new Promise((r) => setTimeout(r, 120));
@@ -74,7 +74,7 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
     token = s2.session?.access_token?.trim();
   }
   if (!token) {
-    throw new Error('No hay sesi?n para generar el PDF. Vuelve a iniciar sesi?n.');
+    throw new Error('No hay sesión para generar el PDF. Vuelve a iniciar sesión.');
   }
   return token;
 }
@@ -82,12 +82,12 @@ async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStor
 /**
  * Edge Function `generate-ctpat-pdf`: JWT Supabase + token OAuth de Google Drive.
  * Importante: leer `provider_token` con `getSession()` ANTES de forzar refresh del JWT de Supabase;
- * si no, GoTrue a menudo devuelve sesi?n sin `provider_token` y Drive falla.
+ * si no, GoTrue a menudo devuelve sesión sin `provider_token` y Drive falla.
  * Reintenta solo ante 401 de puerta (JWT Supabase).
  */
 /** Mensaje cuando Drive falla por token de Google caducado o permisos (texto estable para UI/cola). */
 export const GOOGLE_DRIVE_SYNC_USER_MESSAGE =
-  'Error al subir a Google Drive. Si llevas la sesi?n abierta mucho tiempo, cierra sesi?n e inicia otra vez con Google; si sigue igual, revisa permisos de Drive en tu cuenta.';
+  'Error al subir a Google Drive. Si llevas la sesión abierta mucho tiempo, cierra sesión e inicia otra vez con Google; si sigue igual, revisa permisos de Drive en tu cuenta.';
 
 async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
@@ -99,7 +99,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
     } = await supabase.auth.getSession();
     const token = oauthSession?.provider_token?.trim();
     if (!token) {
-      throw new Error('No hay token de Google Drive. Cierra sesi?n y vuelve a iniciar con Google.');
+      throw new Error('No hay token de Google Drive. Cierra sesión y vuelve a iniciar con Google.');
     }
     return token;
   };
@@ -119,7 +119,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
   const runOnce = async (userJwt: string, googleToken: string): Promise<void> => {
     const trimmedJwt = userJwt.trim();
     if (!trimmedJwt) {
-      throw new Error('No hay token de sesi?n para llamar a la funci?n.');
+      throw new Error('No hay token de sesión para llamar a la función.');
     }
 
     const url = `${baseUrl}/functions/v1/generate-ctpat-pdf`;
@@ -158,7 +158,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
       return;
     }
     if (parsed.ok === false) {
-      throw new Error(parsed.error ?? 'Error en funci?n');
+      throw new Error(parsed.error ?? 'Error en función');
     }
   };
 
@@ -187,8 +187,8 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
 }
 
 function shouldInvalidateLocalSession(message: string): boolean {
-  // Mantener sesi?n local salvo errores reales de autenticaci?n Supabase.
-  // Errores de Google Drive no deben cerrar sesi?n Supabase.
+  // Mantener sesión local salvo errores reales de autenticación Supabase.
+  // Errores de Google Drive no deben cerrar sesión Supabase.
   if (isSessionExpiredError(message)) return true;
   const m = message.toLowerCase();
   return (
@@ -287,16 +287,19 @@ export const useSyncStore = defineStore('sync', {
         void this.processQueue();
       }, ms);
     },
+    /**
+     * Comprueba si Supabase responde (no basta con navigator.onLine: hay redes “colgadas”).
+     */
     async updateConnectivity() {
-      if (navigator.onLine) {
-        this.connectivity = 'online';
+      const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
+      if (!base) {
+        this.connectivity = navigator.onLine ? 'online' : 'offline';
         return;
       }
-
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 4000);
+      const timer = window.setTimeout(() => controller.abort(), 4500);
       try {
-        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/health`, {
+        const res = await fetch(`${base}/auth/v1/health`, {
           method: 'GET',
           cache: 'no-store',
           signal: controller.signal
@@ -334,12 +337,18 @@ export const useSyncStore = defineStore('sync', {
             await idbSet(HISTORY_KEY, cloneForIndexedDb(this.history));
           }
         }
+        if (this.rescueStuckProcessingItems()) {
+          await this.persist();
+        }
       } catch (e) {
         console.warn('SyncStore: IndexedDB no disponible, usando localStorage', e);
         const raw = localStorage.getItem(STORAGE_KEY);
         const rawHistory = localStorage.getItem(HISTORY_KEY);
         this.queue = raw ? normalizeQueueItems(JSON.parse(raw)) : [];
         this.history = rawHistory ? JSON.parse(rawHistory) : [];
+        if (this.rescueStuckProcessingItems()) {
+          await this.persist();
+        }
       }
     },
     async persist() {
@@ -355,9 +364,9 @@ export const useSyncStore = defineStore('sync', {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(this.history));
     },
     /**
-     * JWT inv?lido (p. ej. usuario borrado en Supabase, refresh revocado): limpia cola local y cierra sesi?n.
+     * JWT inválido (p. ej. usuario borrado en Supabase, refresh revocado): limpia cola local y cierra sesión.
      */
-    /** Cierra sesi?n sin toast (el caller muestra un solo mensaje claro). */
+    /** Cierra sesión sin toast (el caller muestra un solo mensaje claro). */
     async handleSessionInvalidated() {
       this.clearRetryTimer();
       this.retryAttempt = 0;
@@ -366,7 +375,20 @@ export const useSyncStore = defineStore('sync', {
       const auth = useAuthStore();
       await auth.signOut();
     },
-    enqueueCreateRegistroAndGenerate(payload: CreateRegistroAndGeneratePayload) {
+    /** Recupera ítems que quedaron en "processing" (cierre de pestaña o error abrupto). */
+    rescueStuckProcessingItems(): boolean {
+      let touched = false;
+      const now = new Date().toISOString();
+      for (const item of this.queue) {
+        if (item.status === 'processing') {
+          item.status = 'pending';
+          item.updatedAt = now;
+          touched = true;
+        }
+      }
+      return touched;
+    },
+    async enqueueCreateRegistroAndGenerate(payload: CreateRegistroAndGeneratePayload) {
       const safePayload = {
         ...payload,
         insertPayloadBase: validateRegistroPayload(payload.insertPayloadBase)
@@ -381,9 +403,9 @@ export const useSyncStore = defineStore('sync', {
         updatedAt: now
       };
       this.queue.push(item);
-      void this.persist();
+      await this.persist();
     },
-    enqueueGeneratePdf(payload: GeneratePdfPayload) {
+    async enqueueGeneratePdf(payload: GeneratePdfPayload) {
       const now = new Date().toISOString();
       const id = `pdf_${payload.registroId}`;
       const alreadyQueued = this.queue.some((q) => q.id === id && q.status !== 'done');
@@ -398,7 +420,7 @@ export const useSyncStore = defineStore('sync', {
         updatedAt: now
       };
       this.queue.push(item);
-      void this.persist();
+      await this.persist();
     },
     async processQueue(): Promise<ProcessQueueResult> {
       if (this.syncing) {
@@ -416,12 +438,16 @@ export const useSyncStore = defineStore('sync', {
       try {
         const authStore = useAuthStore();
 
+        if (this.rescueStuckProcessingItems()) {
+          await this.persist();
+        }
+
         await this.updateConnectivity();
         if (this.connectivity !== 'online') {
           return { hadError: false, skipped: true };
         }
 
-        // Leer sesi?n sin renovar JWT salvo que falte access_token: renovar aqu? suele borrar
+        // Leer sesión sin renovar JWT salvo que falte access_token: renovar aquí suele borrar
         // `provider_token` de Google antes de que la cola llame a `invokeGenerateCtpatPdf`.
         const {
           data: { session: sessionFromStorage }
@@ -437,7 +463,7 @@ export const useSyncStore = defineStore('sync', {
           return {
             hadError: true,
             lastError:
-              'No se pudo validar la sesi?n para sincronizar. Comprueba la conexi?n o vuelve a iniciar sesi?n.',
+              'No se pudo validar la sesión para sincronizar. Comprueba la conexión o vuelve a iniciar sesión.',
             skipped: false
           };
         }
@@ -451,7 +477,11 @@ export const useSyncStore = defineStore('sync', {
           try {
             if (item.kind === 'generate_pdf') {
               const payload = item.payload as GeneratePdfPayload;
-              await invokeGenerateCtpatPdf(payload.registroId);
+              const rid = (payload.registroId ?? '').toString().trim();
+              if (!rid) {
+                throw new Error('Cola de sincronización: falta el id del registro para generar el PDF.');
+              }
+              await invokeGenerateCtpatPdf(rid);
 
               item.status = 'done';
               item.lastError = undefined;
@@ -510,7 +540,7 @@ export const useSyncStore = defineStore('sync', {
                 }
               }
               if (folioErr || !folioData) {
-                throw new Error(`No se pudo generar folio autom?tico: ${folioErr?.message ?? 'sin detalle'}`);
+                throw new Error(`No se pudo generar folio automático: ${folioErr?.message ?? 'sin detalle'}`);
               }
 
               const folioAuto = folioData as string;
@@ -553,9 +583,9 @@ export const useSyncStore = defineStore('sync', {
             }
           } catch (err) {
             const rawMessage = err instanceof Error ? err.message : String(err);
-            // El toast a veces sustituye por mensaje gen?rico; el detalle real va a consola.
+            // El toast a veces sustituye por mensaje genérico; el detalle real va a consola.
             // eslint-disable-next-line no-console
-            console.error('[syncStore] error al guardar / generar PDF (detalle t?cnico):', rawMessage);
+            console.error('[syncStore] error al guardar / generar PDF (detalle técnico):', rawMessage);
             const message = isGoogleDriveAccessError(rawMessage)
               ? GOOGLE_DRIVE_SYNC_USER_MESSAGE
               : rawMessage;
@@ -610,7 +640,7 @@ export const useSyncStore = defineStore('sync', {
       for (const item of this.queue) {
         if (item.status === 'error') {
           const msg = (item.lastError ?? '').toLowerCase();
-          // Errores funcionales (requiere acci?n del usuario) no se reintentan autom?ticamente.
+          // Errores funcionales (requiere acción del usuario) no se reintentan automáticamente.
           if (msg.includes('template requerida') || msg.includes('plantilla pdf')) {
             continue;
           }
@@ -629,14 +659,16 @@ export const useSyncStore = defineStore('sync', {
         this.connectivity = 'offline';
       });
       window.addEventListener('online', () => {
-        void this.updateConnectivity();
-        this.retryAttempt = 0;
-        void this.markErroredItemsAsPending();
-        const auth = useAuthStore();
-        if (auth.isSignedIn) {
-          void auth.refreshSessionForApi({ force: false });
-        }
-        void this.processQueue();
+        void (async () => {
+          await this.updateConnectivity();
+          this.retryAttempt = 0;
+          await this.markErroredItemsAsPending();
+          const auth = useAuthStore();
+          if (auth.isSignedIn) {
+            void auth.refreshSessionForApi({ force: false });
+          }
+          await this.processQueue();
+        })();
       });
     },
     attachLifecycleListeners() {
@@ -645,7 +677,10 @@ export const useSyncStore = defineStore('sync', {
         if (auth.isSignedIn) {
           void auth.refreshSessionForApi({ force: false });
         }
-        void this.processQueue();
+        void (async () => {
+          await this.updateConnectivity();
+          await this.processQueue();
+        })();
       };
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') trigger();
@@ -659,7 +694,10 @@ export const useSyncStore = defineStore('sync', {
       }
       this.periodicSyncTimerId = window.setInterval(() => {
         if (document.visibilityState !== 'visible') return;
-        void this.processQueue();
+        void (async () => {
+          await this.updateConnectivity();
+          await this.processQueue();
+        })();
       }, intervalMs);
     }
   }

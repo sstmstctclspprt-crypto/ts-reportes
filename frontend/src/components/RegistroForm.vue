@@ -1272,7 +1272,7 @@ async function persistRegistro() {
 
   if (!navigator.onLine) {
     try {
-      syncStore.enqueueCreateRegistroAndGenerate({ userId, insertPayloadBase });
+      await syncStore.enqueueCreateRegistroAndGenerate({ userId, insertPayloadBase });
       toastStore.info(
         'REGISTRO EN COLA (OFFLINE)',
         'Se sincronizará y generará el reporte automáticamente cuando haya internet.'
@@ -1367,7 +1367,7 @@ async function persistRegistro() {
   const registroId = data.id as string;
 
   saveSyncPhase.value = 'syncing';
-  syncStore.enqueueGeneratePdf({ registroId, folio: folioAuto });
+  await syncStore.enqueueGeneratePdf({ registroId, folio: folioAuto });
 
   let syncResult: ProcessQueueResult = { hadError: false, skipped: true };
   if (navigator.onLine) {
