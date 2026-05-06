@@ -2184,7 +2184,7 @@ async function buildPdf(
     'Evidencia Lateral 1',
     'Evidencia Lateral 2',
     'Puertas Traseras',
-    'Evidencia de caja abierta'
+    'EVIDENCIA DE CAJA ABIERTA O SELLO'
   ];
 
   const imageUrlsP4 = registro.image_urls ?? [];

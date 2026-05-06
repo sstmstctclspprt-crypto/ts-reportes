@@ -16,7 +16,10 @@ const textRecord = z.record(z.string(), sanitizedString({ max: 1000 }));
 const dataUrlOrPath = z
   .string()
   .max(1_500_000)
-  .refine((v) => v.startsWith('data:') || v.startsWith('organizations/'), 'Evidencia inválida');
+  .refine(
+    (v) => v.length === 0 || v.startsWith('data:') || v.startsWith('organizations/'),
+    'Evidencia inválida'
+  );
 
 const maybeDataUrlOrPath = z
   .string()

@@ -66,9 +66,15 @@ export async function uploadSensitiveEvidence(
   const imagePaths: string[] = [];
   for (let i = 0; i < input.imageDataUrls.length; i++) {
     const dataUrl = input.imageDataUrls[i];
-    if (!dataUrl || !dataUrl.startsWith('data:')) continue;
+    if (!dataUrl || !dataUrl.startsWith('data:')) {
+      imagePaths.push('');
+      continue;
+    }
     const parsed = parseDataUrl(dataUrl);
-    if (!parsed) continue;
+    if (!parsed) {
+      imagePaths.push('');
+      continue;
+    }
     const objectPath = `${rootPath}/images/evidence_${i + 1}.${parsed.extension}`;
     const stored = await uploadDataUrl(dataUrl, objectPath);
     imagePaths.push(stored);

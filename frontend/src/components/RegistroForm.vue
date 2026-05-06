@@ -483,7 +483,7 @@
           @pick="onPickImage('puertasTraseras', $event, 'puertas_traseras')"
         />
         <ImagePicker
-          label="Evidencia de caja abierta"
+          label="EVIDENCIA DE CAJA ABIERTA O SELLO"
           :image="form.evidenciaCajaAbierta"
           @pick="onPickImage('evidenciaCajaAbierta', $event, 'caja_abierta')"
         />
@@ -1175,7 +1175,7 @@ async function persistRegistro() {
     form.evidenciaLateral2,
     form.puertasTraseras,
     form.evidenciaCajaAbierta
-  ].filter((x) => !!x);
+  ];
 
   let insertPayloadBase = {
     service_id: form.numeroTracto.toUpperCase() || null,
