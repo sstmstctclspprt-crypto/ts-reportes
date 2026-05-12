@@ -141,7 +141,7 @@ onMounted(() => {
     sync.attachOnlineListener();
     sync.attachLifecycleListeners();
     sync.attachPeriodicSync(45000);
-    await sync.updateConnectivity();
+    await sync.updateConnectivity(typeof navigator !== 'undefined' && navigator.onLine ? 2 : 1);
     if (sync.connectivity === 'online') {
       await sync.processQueue();
     }

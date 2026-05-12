@@ -197,6 +197,39 @@ function shouldInvalidateLocalSession(message: string): boolean {
   );
 }
 
+/** Fallos típicos de transporte (WiFi inestable, reconexión, proxy) — reintentar, no dar por perdido el ítem. */
+function isTransientNetworkFailure(message: string): boolean {
+  const m = message.toLowerCase();
+  if (m.includes('failed to fetch')) return true;
+  if (m.includes('networkerror')) return true;
+  if (m.includes('network request failed')) return true;
+  if (m.includes('load failed')) return true;
+  if (m.includes('fetch')) {
+    if (m.includes('aborted') || m.includes('abort')) return true;
+    if (m.includes('timeout') || m.includes('timed out')) return true;
+  }
+  if (m.includes('econnrefused') || m.includes('econnreset') || m.includes('etimedout')) return true;
+  if (m.includes('err_connection') || m.includes('err_network') || m.includes('err_internet')) return true;
+  if (m.includes('net::err')) return true;
+  if (m.includes('socket') && m.includes('hang')) return true;
+  if (m.includes('temporarily unavailable')) return true;
+  if (m.includes('http 502') || m.includes('http 503') || m.includes('http 504')) return true;
+  if (m.includes('service unavailable') && m.includes('503')) return true;
+  if (m.includes('bad gateway') && m.includes('502')) return true;
+  if (m.includes('gateway timeout') && m.includes('504')) return true;
+  return false;
+}
+
+let reconnectBurstTimerIds: number[] = [];
+let syncConnectivityListenersAttached = false;
+
+function clearReconnectBurstTimers(): void {
+  for (const id of reconnectBurstTimerIds) {
+    window.clearTimeout(id);
+  }
+  reconnectBurstTimerIds = [];
+}
+
 function openSyncDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, 1);
@@ -294,7 +327,7 @@ export const useSyncStore = defineStore('sync', {
      *   timeout, respuesta no 2xx) NO forzamos “sin conexión”: muchas redes bloquean /auth/v1/health
      *   pero el resto (REST, Edge) sí funciona.
      */
-    async updateConnectivity() {
+    async updateConnectivity(maxAttempts = 1) {
       if (!navigator.onLine) {
         this.connectivity = 'offline';
         return;
@@ -306,24 +339,31 @@ export const useSyncStore = defineStore('sync', {
         return;
       }
 
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 6500);
-      try {
-        const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
-        const res = await fetch(`${base}/auth/v1/health`, {
-          method: 'GET',
-          cache: 'no-store',
-          signal: controller.signal,
-          headers: anon ? { apikey: anon } : {}
-        });
-        if (res.ok) {
-          this.connectivity = 'online';
-          return;
+      const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
+      const attempts = Math.max(1, Math.min(5, maxAttempts));
+
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 400 + attempt * 200));
         }
-      } catch {
-        /* timeout, DNS, CORS raro, etc. */
-      } finally {
-        window.clearTimeout(timer);
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 6500);
+        try {
+          const res = await fetch(`${base}/auth/v1/health`, {
+            method: 'GET',
+            cache: 'no-store',
+            signal: controller.signal,
+            headers: anon ? { apikey: anon } : {}
+          });
+          if (res.ok) {
+            this.connectivity = 'online';
+            return;
+          }
+        } catch {
+          /* timeout, DNS, CORS raro, etc. */
+        } finally {
+          window.clearTimeout(timer);
+        }
       }
 
       this.connectivity = 'online';
@@ -459,7 +499,7 @@ export const useSyncStore = defineStore('sync', {
           await this.persist();
         }
 
-        await this.updateConnectivity();
+        await this.updateConnectivity(navigator.onLine ? 2 : 1);
         if (this.connectivity !== 'online') {
           return { hadError: false, skipped: true };
         }
@@ -610,6 +650,14 @@ export const useSyncStore = defineStore('sync', {
               await this.handleSessionInvalidated();
               return { hadError: true, lastError: SESSION_EXPIRED_SHORT, skipped: false };
             }
+            if (isTransientNetworkFailure(rawMessage)) {
+              item.status = 'pending';
+              item.lastError = undefined;
+              item.updatedAt = new Date().toISOString();
+              hadError = true;
+              lastError = message;
+              continue;
+            }
             item.status = 'error';
             item.lastError = message;
             item.updatedAt = new Date().toISOString();
@@ -671,20 +719,41 @@ export const useSyncStore = defineStore('sync', {
         await this.persist();
       }
     },
+    /** Tras reconectar, la red a veces falla los primeros segundos; reintentamos sin depender solo del evento `online`. */
+    scheduleReconnectBurst() {
+      clearReconnectBurstTimers();
+      const delays = [1200, 3500, 7000];
+      for (const ms of delays) {
+        const id = window.setTimeout(() => {
+          void (async () => {
+            if (!navigator.onLine) return;
+            await this.updateConnectivity(2);
+            await this.markErroredItemsAsPending();
+            await this.processQueue();
+          })();
+        }, ms);
+        reconnectBurstTimerIds.push(id);
+      }
+    },
     attachOnlineListener() {
+      if (syncConnectivityListenersAttached) return;
+      syncConnectivityListenersAttached = true;
       window.addEventListener('offline', () => {
         this.connectivity = 'offline';
+        clearReconnectBurstTimers();
       });
       window.addEventListener('online', () => {
         void (async () => {
-          await this.updateConnectivity();
+          await new Promise((r) => setTimeout(r, 350));
+          await this.updateConnectivity(3);
           this.retryAttempt = 0;
           await this.markErroredItemsAsPending();
           const auth = useAuthStore();
           if (auth.isSignedIn) {
-            void auth.refreshSessionForApi({ force: false });
+            await auth.refreshSessionForApi({ force: false });
           }
           await this.processQueue();
+          this.scheduleReconnectBurst();
         })();
       });
     },
@@ -695,7 +764,10 @@ export const useSyncStore = defineStore('sync', {
           void auth.refreshSessionForApi({ force: false });
         }
         void (async () => {
-          await this.updateConnectivity();
+          if (navigator.onLine) {
+            await this.markErroredItemsAsPending();
+          }
+          await this.updateConnectivity(navigator.onLine ? 2 : 1);
           await this.processQueue();
         })();
       };
@@ -712,7 +784,10 @@ export const useSyncStore = defineStore('sync', {
       this.periodicSyncTimerId = window.setInterval(() => {
         if (document.visibilityState !== 'visible') return;
         void (async () => {
-          await this.updateConnectivity();
+          if (navigator.onLine) {
+            await this.markErroredItemsAsPending();
+          }
+          await this.updateConnectivity(navigator.onLine ? 2 : 1);
           await this.processQueue();
         })();
       }, intervalMs);
