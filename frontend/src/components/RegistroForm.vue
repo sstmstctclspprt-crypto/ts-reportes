@@ -1116,13 +1116,17 @@ function clearFirmaOficial() {
 }
 
 async function persistRegistro() {
+  if (saving.value) return;
   saving.value = true;
   saveSyncPhase.value = 'idle';
   saveSyncDetail.value = '';
   lastSavedFolio.value = '';
 
+  await syncStore.updateConnectivity(1);
+  const treatAsOffline = !navigator.onLine || syncStore.connectivity === 'offline';
+
   let session = null as Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'];
-  if (navigator.onLine) {
+  if (!treatAsOffline) {
     const refreshed = await authStore.refreshSessionForApi();
     if (!refreshed) {
       saving.value = false;
@@ -1232,7 +1236,7 @@ async function persistRegistro() {
     return;
   }
 
-  if (navigator.onLine) {
+  if (!treatAsOffline) {
     const payloadId = crypto.randomUUID();
     try {
       const uploaded = await uploadSensitiveEvidence({
@@ -1270,7 +1274,7 @@ async function persistRegistro() {
     }
   }
 
-  if (!navigator.onLine) {
+  if (treatAsOffline) {
     try {
       await syncStore.enqueueCreateRegistroAndGenerate({ userId, insertPayloadBase });
       toastStore.info(
@@ -1370,7 +1374,7 @@ async function persistRegistro() {
   await syncStore.enqueueGeneratePdf({ registroId, folio: folioAuto });
 
   let syncResult: ProcessQueueResult = { hadError: false, skipped: true };
-  if (navigator.onLine) {
+  if (!treatAsOffline) {
     for (let i = 0; i < 40; i++) {
       syncResult = await syncStore.processQueue();
       if (!syncResult.skipped || syncResult.hadError) break;

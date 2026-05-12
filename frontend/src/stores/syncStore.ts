@@ -62,9 +62,12 @@ function cloneForIndexedDb<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** JWT de usuario listo para la puerta de Edge Functions (evita carrera tras refresh). */
-async function getSupabaseJwtForEdgeFunction(auth: ReturnType<typeof useAuthStore>): Promise<string> {
-  await auth.refreshSessionForApi({ force: true });
+/** JWT para Edge Functions. `force: true` solo en reintentos 401: un refresh forzado suele borrar `provider_token` de Google y rompe la cola con varios PDFs seguidos. */
+async function getSupabaseJwtForEdgeFunction(
+  auth: ReturnType<typeof useAuthStore>,
+  options?: { force?: boolean }
+): Promise<string> {
+  await auth.refreshSessionForApi({ force: options?.force ?? false });
   const { data: s1, error: e1 } = await supabase.auth.getSession();
   if (e1) throw new Error(`Sesión: ${e1.message}`);
   let token = s1.session?.access_token?.trim();
@@ -106,7 +109,7 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
 
   let googleAccessToken = await readGoogleAccessToken();
 
-  let jwt = await getSupabaseJwtForEdgeFunction(auth);
+  let jwt = await getSupabaseJwtForEdgeFunction(auth, { force: false });
 
   const baseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '');
   if (!baseUrl) {
@@ -170,14 +173,14 @@ async function invokeGenerateCtpatPdf(registroId: string): Promise<void> {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (isSupabaseGatewayUnauthorized(message) && attempt < 4) {
-        await auth.refreshSessionForApi({ force: true });
-        jwt = await getSupabaseJwtForEdgeFunction(auth);
+        jwt = await getSupabaseJwtForEdgeFunction(auth, { force: true });
         continue;
       }
       if (!retriedGoogleToken && isGoogleDriveAccessTokenExpiredError(message)) {
         retriedGoogleToken = true;
         await auth.refreshSessionForApi({ force: true });
         googleAccessToken = await readGoogleAccessToken();
+        jwt = await getSupabaseJwtForEdgeFunction(auth, { force: true });
         continue;
       }
       throw err;
@@ -294,6 +297,25 @@ function normalizeQueueItems(parsed: unknown): SyncItem[] {
       } satisfies SyncItem;
     })
     .filter((x): x is SyncItem => x != null);
+}
+
+/** Evita duplicar el mismo guardado offline por doble envío con los mismos datos clave del registro. */
+function offlineCreateFingerprint(insertPayloadBase: Record<string, unknown>): string {
+  try {
+    const tracto = insertPayloadBase.checklist_tracto as Record<string, unknown> | undefined;
+    const dg = tracto?.datos_generales as Record<string, unknown> | undefined;
+    return JSON.stringify({
+      fecha: dg?.fecha,
+      tracto: dg?.numeroTracto,
+      entradaSalida: dg?.entradaSalida,
+      operador: insertPayloadBase.operador,
+      caja: dg?.numeroCaja,
+      placasTracto: dg?.placasTracto,
+      placasCaja: dg?.placasCaja
+    });
+  } catch {
+    return `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  }
 }
 
 export const useSyncStore = defineStore('sync', {
@@ -451,6 +473,22 @@ export const useSyncStore = defineStore('sync', {
         insertPayloadBase: validateRegistroPayload(payload.insertPayloadBase)
       };
       const now = new Date().toISOString();
+      const fp = offlineCreateFingerprint(safePayload.insertPayloadBase as Record<string, unknown>);
+      const dup = this.queue.find(
+        (q) =>
+          q.kind === 'create_registro_and_generate' &&
+          q.status === 'pending' &&
+          offlineCreateFingerprint(
+            (q.payload as CreateRegistroAndGeneratePayload).insertPayloadBase as Record<string, unknown>
+          ) === fp
+      );
+      if (dup) {
+        dup.payload = safePayload;
+        dup.lastError = undefined;
+        dup.updatedAt = now;
+        await this.persist();
+        return;
+      }
       const id = `create_${payload.userId}_${Date.now()}`;
       const item: SyncItem = {
         id,
@@ -624,18 +662,25 @@ export const useSyncStore = defineStore('sync', {
                 throw new Error(`Error insertando registro: ${insertErr?.message ?? 'sin detalle'}`);
               }
 
-              await invokeGenerateCtpatPdf(inserted.id);
+              const registroId = inserted.id as string;
+
+              // Tras insertar en BD, el ítem pasa a solo «generar PDF»: si el PDF falla y se reintenta,
+              // no se vuelve a insertar (evita folios/registros duplicados).
+              item.kind = 'generate_pdf';
+              item.id = `pdf_${registroId}`;
+              item.payload = {
+                registroId,
+                folio: folioAuto
+              } satisfies GeneratePdfPayload;
+              item.updatedAt = new Date().toISOString();
+              await this.persist();
+
+              await invokeGenerateCtpatPdf(registroId);
 
               item.status = 'done';
               item.lastError = undefined;
               item.updatedAt = new Date().toISOString();
-              this.history.unshift({
-                ...item,
-                payload: {
-                  registroId: inserted.id,
-                  folio: folioAuto
-                } satisfies GeneratePdfPayload
-              });
+              this.history.unshift({ ...item });
               hadSuccess = true;
             }
           } catch (err) {
