@@ -13,6 +13,29 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 /** Valida el JWT con Auth (GET /user); evita 401 por fallos al decodificar base64 del payload en algunos clientes. */
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
+function getLogoBucketName(): string {
+  const b = (Deno.env.get('LOGO_BUCKET') ?? 'ctpat-logs').trim();
+  return b || 'ctpat-logs';
+}
+
+/** Si en BD quedó la URL pública de Storage en vez de la ruta del objeto, extrae `logos/...`. */
+function logoStoragePathFromMaybeUrl(v: string): string {
+  const s = v.trim();
+  if (!s) return s;
+  const publicMark = '/storage/v1/object/public/';
+  const idx = s.indexOf(publicMark);
+  if (idx < 0) return s;
+  const rest = s.slice(idx + publicMark.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) return s;
+  const afterBucket = rest.slice(slash + 1).split('?')[0];
+  try {
+    return decodeURIComponent(afterBucket);
+  } catch {
+    return afterBucket;
+  }
+}
+
 /** PDFs por usuario; solo la Edge Function sube con service_role. */
 const PDF_STORAGE_BUCKET = 'ctpat-pdfs';
 /** Evidencias/firma sensibles en bucket privado por organización/usuario. */
@@ -179,12 +202,20 @@ type SupabaseForStorage = {
 /** Alineado con la PWA (authStore): metadata → nombre de archivo en Storage */
 function normalizeServiceLogoFile(v: string | null | undefined): string {
   if (!v) return 'caterpillar.png';
-  const s = v.toString().toLowerCase();
+  const raw = logoStoragePathFromMaybeUrl(v.toString().trim());
+  if (!raw) return 'caterpillar.png';
+  const s = raw.toLowerCase();
+  // Rutas reales en bucket (`logos/<user_id>.png`, etc.): no aplicar heurísticas de marca.
+  if (s.includes('/') && (s.endsWith('.png') || s.endsWith('.jpg') || s.endsWith('.jpeg'))) {
+    return s;
+  }
   if (s.endsWith('.png') || s.endsWith('.jpg') || s.endsWith('.jpeg')) return s;
-  if (s.includes('caterpillar')) return 'caterpillar.png';
-  if (s.includes('komatsu')) return 'komatsu.png';
-  if (s.includes('john_deere') || s.includes('john')) return 'john_deere.png';
-  if (s.includes('danfoss')) return 'danfoss.png';
+  if (!s.includes('/')) {
+    if (s.includes('caterpillar')) return 'caterpillar.png';
+    if (s.includes('komatsu')) return 'komatsu.png';
+    if (s.includes('john_deere') || s.includes('john')) return 'john_deere.png';
+    if (s.includes('danfoss')) return 'danfoss.png';
+  }
   // Logo libre: si viene sin extensión, lo tratamos como PNG.
   return `${s}.png`;
 }
@@ -276,15 +307,110 @@ async function ensureUserLogoRow(
   };
 }
 
+/** Descarga bytes de un objeto del bucket de logos (download → URL firmada → URL pública). */
+async function fetchLogoBytesFromBucket(
+  supabaseServer: ReturnType<typeof createClient>,
+  logoPath: string
+): Promise<Uint8Array | null> {
+  const bucket = getLogoBucketName();
+  const normalized = logoPath.trim().replace(/^\/+/, '');
+  if (!normalized) return null;
+
+  const { data: blob, error: dlErr } = await supabaseServer.storage.from(bucket).download(normalized);
+  if (!dlErr && blob && blob.size > 0) {
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  if (dlErr) {
+    console.warn('[generate-ctpat-pdf] logo download:', normalized, dlErr.message);
+  }
+
+  const { data: signed, error: signErr } = await supabaseServer.storage
+    .from(bucket)
+    .createSignedUrl(normalized, 120);
+  if (!signErr && signed?.signedUrl) {
+    try {
+      const res = await fetch(signed.signedUrl, { method: 'GET' });
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength > 0) return new Uint8Array(buf);
+      }
+    } catch (e) {
+      console.warn('[generate-ctpat-pdf] logo signedUrl fetch:', normalized, e);
+    }
+  }
+
+  if (SUPABASE_URL) {
+    const encoded = normalized
+      .split('/')
+      .filter(Boolean)
+      .map((seg) => encodeURIComponent(seg))
+      .join('/');
+    const publicUrl = `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${encoded}`;
+    try {
+      const res = await fetch(publicUrl, { method: 'GET' });
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength > 0) return new Uint8Array(buf);
+      }
+    } catch (e) {
+      console.warn('[generate-ctpat-pdf] logo public fetch:', normalized, e);
+    }
+  }
+
+  return null;
+}
+
 async function logoExistsInBucket(
   supabaseServer: ReturnType<typeof createClient>,
   logoPath: string
 ): Promise<boolean> {
-  const normalized = logoPath.trim().replace(/^\/+/, '');
-  if (!normalized) return false;
-  const { data, error } = await supabaseServer.storage.from(Deno.env.get('LOGO_BUCKET') ?? 'ctpat-logs').download(normalized);
-  if (error || !data) return false;
-  return true;
+  const bytes = await fetchLogoBytesFromBucket(supabaseServer, logoPath);
+  return bytes != null && bytes.length > 0;
+}
+
+/** Localiza el logo subido por la PWA (`logos/<user_id>.png|jpg`) aunque BD o mayúsculas no coincidan. */
+async function discoverUserLogoStoragePath(
+  supabaseServer: ReturnType<typeof createClient>,
+  userId: string
+): Promise<string | null> {
+  const uid = userId.trim();
+  if (!uid) return null;
+  const uidLower = uid.toLowerCase();
+
+  const exact = [
+    `logos/${uid}.png`,
+    `logos/${uid}.jpg`,
+    `logos/${uid}.jpeg`,
+    `logos/${uidLower}.png`,
+    `logos/${uidLower}.jpg`,
+    `logos/${uidLower}.jpeg`
+  ];
+  for (const p of exact) {
+    if (await logoExistsInBucket(supabaseServer, p)) return p.replace(/^\/+/, '');
+  }
+
+  try {
+    const { data: files, error } = await supabaseServer.storage.from(getLogoBucketName()).list('logos', {
+      limit: 200
+    });
+    if (error) {
+      console.warn('[generate-ctpat-pdf] list logos/:', error.message);
+      return null;
+    }
+    const match = (files ?? []).find((f) => {
+      const name = (f.name ?? '').trim();
+      if (!name || name.endsWith('/')) return false;
+      const lower = name.toLowerCase();
+      if (!/\.(png|jpe?g)$/i.test(lower)) return false;
+      const base = lower.replace(/\.(png|jpe?g)$/i, '');
+      return base === uidLower;
+    });
+    if (match?.name) return `logos/${match.name}`;
+  } catch (e) {
+    console.warn('[generate-ctpat-pdf] discoverUserLogo list failed', e);
+  }
+
+  return null;
 }
 
 /**
@@ -298,15 +424,38 @@ async function resolveUserLogoForPdf(
   userId: string,
   configuredLogo: string | null | undefined
 ): Promise<string | null> {
-  const configured = configuredLogo?.trim() ?? '';
-  if (configured && (await logoExistsInBucket(supabaseServer, configured))) {
-    return configured;
+  const ordered: string[] = [];
+  const push = (p: string) => {
+    const t = p.trim();
+    if (!t || ordered.includes(t)) return;
+    ordered.push(t);
+  };
+
+  const discovered = await discoverUserLogoStoragePath(supabaseServer, userId);
+  if (discovered) push(discovered);
+
+  const configuredRaw = logoStoragePathFromMaybeUrl((configuredLogo ?? '').trim());
+  if (configuredRaw) {
+    push(configuredRaw);
+    push(normalizeServiceLogoFile(configuredRaw));
   }
 
-  const fallbacks = [`logos/${userId}.png`, `logos/${userId}.jpg`, `logos/${userId}.jpeg`];
-  for (const candidate of fallbacks) {
+  const uid = userId.trim();
+  const uidLower = uid.toLowerCase();
+  for (const c of [
+    `logos/${uid}.png`,
+    `logos/${uid}.jpg`,
+    `logos/${uid}.jpeg`,
+    `logos/${uidLower}.png`,
+    `logos/${uidLower}.jpg`,
+    `logos/${uidLower}.jpeg`
+  ]) {
+    push(c);
+  }
+
+  for (const candidate of ordered) {
     if (await logoExistsInBucket(supabaseServer, candidate)) {
-      if (configured !== candidate) {
+      if (candidate.toLowerCase() !== (configuredRaw || '').toLowerCase()) {
         await supabaseServer
           .from('user_drive_config')
           .update({ service_logo_file: candidate })
@@ -316,7 +465,7 @@ async function resolveUserLogoForPdf(
     }
   }
 
-  return configured || null;
+  return configuredRaw || null;
 }
 
 async function syncPdfToGoogleDrive(
@@ -503,6 +652,48 @@ async function notifyPowerAutomateCtPatPdfReady(params: {
   }
 }
 
+function isPngImageBytes(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  );
+}
+
+function isJpegImageBytes(bytes: Uint8Array): boolean {
+  return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8;
+}
+
+/** Incrusta bytes de imagen sin lanzar (evita HTTP 500 «SOI not found in JPEG»). */
+async function embedImageBytesSafe(
+  pdfDoc: PDFDocument,
+  bytes: Uint8Array
+): Promise<ReturnType<PDFDocument['embedPng']> | null> {
+  if (!bytes || bytes.length < 12) return null;
+  try {
+    if (isPngImageBytes(bytes)) return await pdfDoc.embedPng(bytes);
+    if (isJpegImageBytes(bytes)) return await pdfDoc.embedJpg(bytes);
+    try {
+      return await pdfDoc.embedPng(bytes);
+    } catch {
+      try {
+        return await pdfDoc.embedJpg(bytes);
+      } catch (e) {
+        console.warn(
+          '[generate-ctpat-pdf] bytes no son imagen válida:',
+          e instanceof Error ? e.message : String(e)
+        );
+        return null;
+      }
+    }
+  } catch (e) {
+    console.warn('[generate-ctpat-pdf] embedImageBytesSafe:', e);
+    return null;
+  }
+}
+
 /** Soporta data URL legacy o ruta privada en Supabase Storage. */
 async function embedEvidenceImage(
   pdfDoc: PDFDocument,
@@ -510,26 +701,28 @@ async function embedEvidenceImage(
   supabaseStorage?: SupabaseForStorage
 ): Promise<ReturnType<PDFDocument['embedPng']> | null> {
   if (!source || typeof source !== 'string') return null;
+  const trimmed = source.trim();
+  if (!trimmed) return null;
   try {
-    if (source.startsWith('data:')) {
-      const m = source.match(/^data:(.+);base64,(.+)$/);
-      if (!m) return null;
-      const mime = m[1].trim().toLowerCase();
-      const b64 = m[2];
-      const bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      if (mime.includes('png')) return await pdfDoc.embedPng(bytes);
-      return await pdfDoc.embedJpg(bytes);
+    if (trimmed.startsWith('data:')) {
+      const parsed = getDataUrlMimeAndBytes(trimmed);
+      if (!parsed || parsed.bytes.length < 12) return null;
+      return await embedImageBytesSafe(pdfDoc, parsed.bytes);
     }
     if (!supabaseStorage) return null;
-    const { data: blob, error } = await supabaseStorage.storage.from(EVIDENCE_STORAGE_BUCKET).download(source);
-    if (error || !blob) return null;
+    const { data: blob, error } = await supabaseStorage.storage
+      .from(EVIDENCE_STORAGE_BUCKET)
+      .download(trimmed);
+    if (error || !blob || blob.size < 12) {
+      if (error) {
+        console.warn('[generate-ctpat-pdf] evidencia download:', trimmed, error.message);
+      }
+      return null;
+    }
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    const mime = (blob.type || '').toLowerCase();
-    if (mime.includes('png') || source.endsWith('.png')) return await pdfDoc.embedPng(bytes);
-    return await pdfDoc.embedJpg(bytes);
-  } catch {
+    return await embedImageBytesSafe(pdfDoc, bytes);
+  } catch (e) {
+    console.warn('[generate-ctpat-pdf] embedEvidenceImage:', trimmed, e);
     return null;
   }
 }
@@ -744,7 +937,7 @@ async function buildPdf(
 
   // Cargar logos: 1) desde URL (Storage/CDN), 2) desde archivos locales
   const LOGO_BASE_URL = Deno.env.get('LOGO_BASE_URL');
-  const LOGO_BUCKET = Deno.env.get('LOGO_BUCKET') ?? 'ctpat-logs';
+  const LOGO_BUCKET = getLogoBucketName();
   const logoBaseUrl = (
     LOGO_BASE_URL ||
     (SUPABASE_URL ? `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${LOGO_BUCKET}` : '')
@@ -754,33 +947,16 @@ async function buildPdf(
     const trimmed = path.replace(/^\/+/, '').trim();
     if (!trimmed) return null;
 
-    const lower = trimmed.toLowerCase();
-    const isPng = lower.endsWith('.png');
-    const isJpg = lower.endsWith('.jpg') || lower.endsWith('.jpeg');
-    const tryEmbed = async (bytes: Uint8Array) => {
-      if (isPng) return await pdfDoc.embedPng(bytes);
-      if (isJpg) return await pdfDoc.embedJpg(bytes);
-      return await pdfDoc.embedPng(bytes).catch(() => pdfDoc.embedJpg(bytes));
-    };
-
-    // 1) Service role primero: logos de usuario (`logos/<user_id>.png`) y rutas con carpetas.
-    // El fetch público desde Edge a veces falla (DNS/red); la descarga con la misma clave sí funciona.
+    // 1) Storage (download + URL firmada + pública). En deploy --use-api no hay carpeta assets/.
     if (supabaseStorage) {
-      try {
-        const { data: blob, error: dlErr } = await supabaseStorage.storage.from(LOGO_BUCKET).download(trimmed);
-        if (!dlErr && blob) {
-          const buf = await blob.arrayBuffer();
-          return await tryEmbed(new Uint8Array(buf));
-        }
-        if (dlErr) {
-          console.warn('loadImage storage.download:', trimmed, dlErr.message);
-        }
-      } catch (e) {
-        console.warn('loadImage storage.download failed:', trimmed, e);
+      const bytes = await fetchLogoBytesFromBucket(supabaseStorage, trimmed);
+      if (bytes) {
+        const embedded = await embedImageBytesSafe(pdfDoc, bytes);
+        if (embedded) return embedded;
       }
     }
 
-    // 2) URL pública (Supabase Storage o LOGO_BASE_URL)
+    // 2) LOGO_BASE_URL externo (si está configurado)
     if (logoBaseUrl) {
       try {
         const encodedPath = trimmed
@@ -792,22 +968,25 @@ async function buildPdf(
         const res = await fetch(url);
         if (res.ok) {
           const buf = await res.arrayBuffer();
-          return await tryEmbed(new Uint8Array(buf));
+          if (buf.byteLength >= 12) {
+            const embedded = await embedImageBytesSafe(pdfDoc, new Uint8Array(buf));
+            if (embedded) return embedded;
+          }
         }
       } catch (e) {
         console.warn('loadImage fetch failed:', trimmed, e);
       }
     }
 
-    // 3) Archivos locales (./assets o cwd/assets)
+    // 3) Archivos locales (solo desarrollo / deploy con Docker que incluye assets)
     try {
       const url = new URL(`./assets/${trimmed}`, import.meta.url);
       const data = await Deno.readFile(url);
-      return await tryEmbed(data);
+      return await embedImageBytesSafe(pdfDoc, data);
     } catch {
       try {
         const data = await Deno.readFile(`${Deno.cwd()}/assets/${trimmed}`);
-        return await tryEmbed(data);
+        return await embedImageBytesSafe(pdfDoc, data);
       } catch (e) {
         console.warn('loadImage file failed:', trimmed, e);
         return null;
@@ -821,9 +1000,6 @@ async function buildPdf(
    */
   async function loadWatermarkLogo() {
     const lower = 'logo.png';
-    const tryEmbed = async (bytes: Uint8Array) => {
-      return await pdfDoc.embedPng(bytes).catch(() => pdfDoc.embedJpg(bytes));
-    };
 
     // 1) URL pública exacta (evita ambigüedad de rutas/folders)
     if (SUPABASE_URL) {
@@ -832,7 +1008,8 @@ async function buildPdf(
         const res = await fetch(exactPublicUrl, { method: 'GET' });
         if (res.ok) {
           const buf = await res.arrayBuffer();
-          return await tryEmbed(new Uint8Array(buf));
+          const embedded = await embedImageBytesSafe(pdfDoc, new Uint8Array(buf));
+          if (embedded) return embedded;
         }
         console.warn('[generate-ctpat-pdf] watermark public URL fetch failed', {
           url: exactPublicUrl,
@@ -843,19 +1020,12 @@ async function buildPdf(
       }
     }
 
-    // 2) Descarga directa con service role
+    // 2) Storage (misma cadena que logos de servicio)
     if (supabaseStorage) {
-      try {
-        const { data: blob, error: dlErr } = await supabaseStorage.storage.from(LOGO_BUCKET).download(lower);
-        if (!dlErr && blob) {
-          const buf = await blob.arrayBuffer();
-          return await tryEmbed(new Uint8Array(buf));
-        }
-        if (dlErr) {
-          console.warn('[generate-ctpat-pdf] watermark storage.download failed', dlErr.message);
-        }
-      } catch (e) {
-        console.warn('[generate-ctpat-pdf] watermark storage.download error', e);
+      const bytes = await fetchLogoBytesFromBucket(supabaseStorage, lower);
+      if (bytes) {
+        const embedded = await embedImageBytesSafe(pdfDoc, bytes);
+        if (embedded) return embedded;
       }
     }
 
@@ -863,11 +1033,11 @@ async function buildPdf(
     try {
       const url = new URL(`./assets/${lower}`, import.meta.url);
       const data = await Deno.readFile(url);
-      return await tryEmbed(data);
+      return await embedImageBytesSafe(pdfDoc, data);
     } catch {
       try {
         const data = await Deno.readFile(`${Deno.cwd()}/assets/${lower}`);
-        return await tryEmbed(data);
+        return await embedImageBytesSafe(pdfDoc, data);
       } catch (e) {
         console.warn('[generate-ctpat-pdf] watermark local file failed', e);
         return null;
@@ -885,15 +1055,32 @@ async function buildPdf(
     const add = (v: string | null | undefined) => {
       const t = (v ?? '').toString().trim();
       if (!t) return;
-      if (!out.includes(t)) out.push(t);
+      const pathOnly = logoStoragePathFromMaybeUrl(t);
+      if (pathOnly && !out.includes(pathOnly)) out.push(pathOnly);
+      const normalized = normalizeServiceLogoFile(pathOnly);
+      if (normalized && normalized !== pathOnly && !out.includes(normalized)) out.push(normalized);
     };
 
     const direct = (logoCenterFile ?? '').toString().trim();
     if (direct) {
       add(direct);
-      add(normalizeServiceLogoFile(direct));
-      return out;
     }
+
+    const uid = (registro.user_id ?? '').toString().trim();
+    if (uid) {
+      const uidLower = uid.toLowerCase();
+      for (const p of [
+        `logos/${uid}.png`,
+        `logos/${uid}.jpg`,
+        `logos/${uid}.jpeg`,
+        `logos/${uidLower}.png`,
+        `logos/${uidLower}.jpg`,
+        `logos/${uidLower}.jpeg`
+      ]) {
+        add(p);
+      }
+    }
+
     return out;
   })();
 
@@ -2497,11 +2684,28 @@ Deno.serve(async (req) => {
 
     const logoFromConfig = (() => {
       const d = finalDriveCfg?.service_logo_file?.trim();
-      if (d) return d;
+      if (d) return logoStoragePathFromMaybeUrl(d);
       const m = logoFromUserMetadata(userMeta);
       return m ? normalizeServiceLogoFile(m) : null;
     })();
-    const resolvedCenterLogo = await resolveUserLogoForPdf(supabaseServer, data.user_id, logoFromConfig);
+    const discoveredLogo = await discoverUserLogoStoragePath(supabaseServer, data.user_id);
+    const resolvedCenterLogo =
+      discoveredLogo ?? (await resolveUserLogoForPdf(supabaseServer, data.user_id, logoFromConfig));
+
+    if (resolvedCenterLogo) {
+      console.log('[generate-ctpat-pdf] logo centro', {
+        userId: data.user_id,
+        path: resolvedCenterLogo,
+        bucket: getLogoBucketName(),
+        fromDiscover: Boolean(discoveredLogo)
+      });
+    } else {
+      console.warn('[generate-ctpat-pdf] sin logo centro resuelto', {
+        userId: data.user_id,
+        bucket: getLogoBucketName(),
+        service_logo_file: finalDriveCfg?.service_logo_file
+      });
+    }
 
     const pdfBytes = await buildPdf(data, resolvedCenterLogo, supabaseServer);
 

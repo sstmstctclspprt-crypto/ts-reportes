@@ -565,15 +565,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import type { ProcessQueueResult } from '../stores/syncStore';
 import { VueSignaturePad } from 'vue-signature-pad';
 import { useRouter } from 'vue-router';
 import { supabase } from '../supabaseClient';
-import {
-  isSessionExpiredError,
-  SESSION_EXPIRED,
-  SESSION_EXPIRED_SHORT
-} from '../utils/supabaseAuthErrors';
+import { isSessionExpiredError, SESSION_EXPIRED } from '../utils/supabaseAuthErrors';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { useSyncStore } from '../stores/syncStore';
@@ -1281,7 +1276,7 @@ async function persistRegistro() {
         'REGISTRO EN COLA (OFFLINE)',
         'Se sincronizará y generará el reporte automáticamente cuando haya internet.'
       );
-      await router.push({ name: 'home' });
+      await router.replace({ name: 'home' });
     } catch {
       toastStore.error(
         'No se pudo guardar offline',
@@ -1370,60 +1365,23 @@ async function persistRegistro() {
 
   const registroId = data.id as string;
 
-  saveSyncPhase.value = 'syncing';
   await syncStore.enqueueGeneratePdf({ registroId, folio: folioAuto });
 
-  let syncResult: ProcessQueueResult = { hadError: false, skipped: true };
-  if (!treatAsOffline) {
-    for (let i = 0; i < 40; i++) {
-      syncResult = await syncStore.processQueue();
-      if (!syncResult.skipped || syncResult.hadError) break;
-      await new Promise((r) => setTimeout(r, 150));
-    }
-  }
-
+  saveSyncPhase.value = 'idle';
   saving.value = false;
-  lastSavedFolio.value = folioAuto;
 
-  if (syncResult.hadError) {
-    saveSyncPhase.value = 'error';
-    saveSyncDetail.value = syncResult.lastError ?? 'Error desconocido al generar o subir el PDF.';
-    if (syncResult.lastError === SESSION_EXPIRED_SHORT) {
-      toastStore.error(SESSION_EXPIRED.title, SESSION_EXPIRED.message);
-    } else {
-      toastStore.error('Sincronización', saveSyncDetail.value);
-    }
-    return;
-  }
+  toastStore.success(
+    'Registro guardado',
+    `Folio ${folioAuto}. Sincronizando PDF desde Inicio…`
+  );
 
-  if (syncResult.skipped) {
-    const qid = `pdf_${registroId}`;
-    const item = syncStore.queue.find((q) => q.id === qid);
-    if (item?.status === 'error') {
-      saveSyncPhase.value = 'error';
-      saveSyncDetail.value = item.lastError ?? 'Error al sincronizar.';
-      toastStore.error('Sincronización', saveSyncDetail.value);
-      return;
-    }
-    if (item?.status === 'pending' || item?.status === 'processing') {
-      saveSyncPhase.value = 'error';
-      saveSyncDetail.value =
-        'La sincronización sigue en cola. Abre Inicio y pulsa «Sincronizar ahora» o «Reintentar».';
-      toastStore.info('Cola activa', saveSyncDetail.value);
-      return;
-    }
-  }
-
-  saveSyncPhase.value = 'success';
-  toastStore.success('REGISTRO COMPLETADO', `FOLIO: ${folioAuto}`);
   try {
-    await router.push({ name: 'home' });
+    await router.replace({ name: 'home' });
   } catch {
-    toastStore.error('Error', 'Registro guardado, pero no se pudo regresar al panel.');
+    toastStore.error('Error', 'Registro guardado, pero no se pudo volver al inicio.');
   }
-  setTimeout(() => {
-    saveSyncPhase.value = 'idle';
-  }, 400);
+
+  void syncStore.processQueue();
 }
 
 async function onSubmit() {

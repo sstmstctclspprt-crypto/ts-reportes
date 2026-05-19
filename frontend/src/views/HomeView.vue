@@ -424,6 +424,12 @@ watch(
     if (name === 'home') {
       loadRegistros();
       refreshCameraBlockedBanner();
+      const needsSync = syncStore.queue.some(
+        (q) => q.status === 'pending' || q.status === 'processing' || q.status === 'error'
+      );
+      if (needsSync) {
+        void syncStore.processQueue();
+      }
     }
   }
 );

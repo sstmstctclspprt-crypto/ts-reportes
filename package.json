@@ -3,6 +3,8 @@
   "private": true,
   "workspaces": ["frontend"],
   "scripts": {
-    "build": "npm run build -w tactical-support-ctpat-pwa"
+    "build": "npm run build -w tactical-support-ctpat-pwa",
+    "deploy:generate-ctpat-pdf": "supabase functions deploy generate-ctpat-pdf --project-ref ouqwinavncjyyywvfyci --use-api --yes --workdir backend",
+    "supabase:secrets:list": "supabase secrets list --project-ref ouqwinavncjyyywvfyci --workdir backend"
   }
 }
