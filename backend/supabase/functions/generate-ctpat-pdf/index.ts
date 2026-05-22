@@ -994,57 +994,6 @@ async function buildPdf(
     }
   }
 
-  /**
-   * Carga estricta de marca de agua `logo.png`.
-   * Prioridad: URL pública exacta del bucket -> storage.download -> assets locales.
-   */
-  async function loadWatermarkLogo() {
-    const lower = 'logo.png';
-
-    // 1) URL pública exacta (evita ambigüedad de rutas/folders)
-    if (SUPABASE_URL) {
-      const exactPublicUrl = `${SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${LOGO_BUCKET}/${lower}`;
-      try {
-        const res = await fetch(exactPublicUrl, { method: 'GET' });
-        if (res.ok) {
-          const buf = await res.arrayBuffer();
-          const embedded = await embedImageBytesSafe(pdfDoc, new Uint8Array(buf));
-          if (embedded) return embedded;
-        }
-        console.warn('[generate-ctpat-pdf] watermark public URL fetch failed', {
-          url: exactPublicUrl,
-          status: res.status
-        });
-      } catch (e) {
-        console.warn('[generate-ctpat-pdf] watermark public URL error', e);
-      }
-    }
-
-    // 2) Storage (misma cadena que logos de servicio)
-    if (supabaseStorage) {
-      const bytes = await fetchLogoBytesFromBucket(supabaseStorage, lower);
-      if (bytes) {
-        const embedded = await embedImageBytesSafe(pdfDoc, bytes);
-        if (embedded) return embedded;
-      }
-    }
-
-    // 3) Assets locales
-    try {
-      const url = new URL(`./assets/${lower}`, import.meta.url);
-      const data = await Deno.readFile(url);
-      return await embedImageBytesSafe(pdfDoc, data);
-    } catch {
-      try {
-        const data = await Deno.readFile(`${Deno.cwd()}/assets/${lower}`);
-        return await embedImageBytesSafe(pdfDoc, data);
-      } catch (e) {
-        console.warn('[generate-ctpat-pdf] watermark local file failed', e);
-        return null;
-      }
-    }
-  }
-
   const logoLeft = await loadImage('ctpat.png'); // siempre lado izquierdo
 
   // Logo de la empresa en el centro:
@@ -1108,22 +1057,16 @@ async function buildPdf(
   }
 
   const logoRight = await loadImage('oea.jpeg'); // siempre lado derecho
-  // Marca de agua: SIEMPRE `logo.png`, centrado en cada página (sin rotación).
-  const logoWatermark = await loadWatermarkLogo(); // fondo de cada página
+  // Marca de agua Tactical Support (`logo.png`, mismo archivo que frontend/public/logo.png).
+  const logoWatermark = await loadImage('logo.png');
   if (!logoWatermark) {
-    console.error('[generate-ctpat-pdf] Failed to load watermark image logo.png');
+    console.error('[generate-ctpat-pdf] marca de agua logo.png no cargada (Storage ctpat-logs/logo.png o assets)');
   }
 
-  /** Marca de agua tipo sello: visible pero sin tapar el contenido. */
-  const WATERMARK_MAX_PAGE_FRACTION = 0.95;
-  const WATERMARK_OPACITY = 1;
+  /** Fondo de agua: centrado, ~55% del área útil de la hoja, 40% de opacidad. */
+  const WATERMARK_MAX_PAGE_FRACTION = 0.55;
+  const WATERMARK_OPACITY = 0.4;
 
-  /**
-   * Fondo de agua uniforme en todas las páginas:
-   * - Centrado visual (compensa rotación alrededor de bottom-left)
-   * - Escala relativa al tamaño de hoja
-   * - Conserva proporción del logo
-   */
   function drawCenteredWatermark(page: PDFPage) {
     if (!logoWatermark) return;
     const { width: pageW, height: pageH } = page.getSize();
@@ -1136,21 +1079,20 @@ async function buildPdf(
     const scale = Math.min(maxW / naturalW, maxH / naturalH);
     const wmW = naturalW * scale;
     const wmH = naturalH * scale;
+    const x = (pageW - wmW) / 2;
+    const y = (pageH - wmH) / 2;
 
-  // Centrado exacto (sin rotación).
-  const x = (pageW - wmW) / 2;
-  const y = (pageH - wmH) / 2;
-
-  page.drawImage(logoWatermark, {
-    x,
-    y,
-    width: wmW,
-    height: wmH,
-    opacity: WATERMARK_OPACITY
-  });
+    page.drawImage(logoWatermark, {
+      x,
+      y,
+      width: wmW,
+      height: wmH,
+      opacity: WATERMARK_OPACITY
+    });
   }
 
   const page1 = pdfDoc.addPage([595.28, 841.89]); // A4
+  drawCenteredWatermark(page1);
   const { width, height } = page1.getSize();
   const mechHabilitadaGlobal = ((registro.inspeccion_mecanica as any)?.habilitada ?? false) === true;
 
@@ -1667,10 +1609,10 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
-  drawCenteredWatermark(page1);
 
   // ========== PÁGINA 2: Cheklist Inspección Agrícola + Puntos de verificación del tracto ==========
   const page2 = pdfDoc.addPage([595.28, 841.89]);
+  drawCenteredWatermark(page2);
   const height2 = page2.getSize().height;
   const secH2 = 18;
   let cy = height2 - 36;
@@ -1864,12 +1806,12 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
-  drawCenteredWatermark(page2);
 
   // ========== PÁGINA 3: Inspección mecánica, evidencias y firmas ==========
   // Si el checklist mecánico NO está habilitado, ignoramos completamente la hoja 3.
   if (mechHabilitadaGlobal) {
     const page3 = pdfDoc.addPage([595.28, 841.89]);
+    drawCenteredWatermark(page3);
     const height3 = page3.getSize().height;
   let cy3 = height3 - 40;
   // Folio en la esquina superior derecha (mismo folio en todas las páginas).
@@ -2322,12 +2264,12 @@ async function buildPdf(
         font: fontRegular,
         color: rgb(0.4, 0.4, 0.4)
       });
-      drawCenteredWatermark(page3);
     }
   }
 
   // ========== PÁGINA 4: EVIDENCIAS FOTOGRÁFICAS ==========
   const page4 = pdfDoc.addPage([595.28, 841.89]);
+  drawCenteredWatermark(page4);
   const height4 = page4.getSize().height;
 
   const marginP4 = 32;
@@ -2471,7 +2413,6 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
-  drawCenteredWatermark(page4);
 
   return await pdfDoc.save();
 }
