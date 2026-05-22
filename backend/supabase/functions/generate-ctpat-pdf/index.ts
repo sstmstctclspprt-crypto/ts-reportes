@@ -1078,9 +1078,9 @@ async function buildPdf(
     console.error('[generate-ctpat-pdf] marca de agua no cargada');
   }
 
-  /** Fondo de agua: centrado; opacidad 100% para validar que se dibuja (ajustar a 0.4 después si hace falta). */
+  /** Fondo de agua: centrado, detrás del contenido (se dibuja al crear cada página). */
   const WATERMARK_MAX_PAGE_FRACTION = 0.58;
-  const WATERMARK_OPACITY = 1;
+  const WATERMARK_OPACITY = 0.3;
 
   function drawCenteredWatermark(page: PDFPage) {
     if (!logoWatermark) return;
@@ -1107,6 +1107,7 @@ async function buildPdf(
   }
 
   const page1 = pdfDoc.addPage([595.28, 841.89]); // A4
+  drawCenteredWatermark(page1);
   const { width, height } = page1.getSize();
   const mechHabilitadaGlobal = ((registro.inspeccion_mecanica as any)?.habilitada ?? false) === true;
 
@@ -1623,10 +1624,10 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
-  drawCenteredWatermark(page1);
 
   // ========== PÁGINA 2: Cheklist Inspección Agrícola + Puntos de verificación del tracto ==========
   const page2 = pdfDoc.addPage([595.28, 841.89]);
+  drawCenteredWatermark(page2);
   const height2 = page2.getSize().height;
   const secH2 = 18;
   let cy = height2 - 36;
@@ -1820,12 +1821,12 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
-  drawCenteredWatermark(page2);
 
   // ========== PÁGINA 3: Inspección mecánica, evidencias y firmas ==========
   // Si el checklist mecánico NO está habilitado, ignoramos completamente la hoja 3.
   if (mechHabilitadaGlobal) {
     const page3 = pdfDoc.addPage([595.28, 841.89]);
+    drawCenteredWatermark(page3);
     const height3 = page3.getSize().height;
   let cy3 = height3 - 40;
   // Folio en la esquina superior derecha (mismo folio en todas las páginas).
@@ -2278,12 +2279,12 @@ async function buildPdf(
         font: fontRegular,
         color: rgb(0.4, 0.4, 0.4)
       });
-      drawCenteredWatermark(page3);
     }
   }
 
   // ========== PÁGINA 4: EVIDENCIAS FOTOGRÁFICAS ==========
   const page4 = pdfDoc.addPage([595.28, 841.89]);
+  drawCenteredWatermark(page4);
   const height4 = page4.getSize().height;
 
   const marginP4 = 32;
@@ -2427,7 +2428,6 @@ async function buildPdf(
     font: fontRegular,
     color: rgb(0.4, 0.4, 0.4)
   });
-  drawCenteredWatermark(page4);
 
   return await pdfDoc.save();
 }
