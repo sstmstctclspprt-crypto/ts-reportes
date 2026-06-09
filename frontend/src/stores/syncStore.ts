@@ -52,6 +52,12 @@ export interface ProcessQueueResult {
   skipped: boolean;
 }
 
+const REGISTRO_BD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function registroExpiresAtIso(): string {
+  return new Date(Date.now() + REGISTRO_BD_RETENTION_MS).toISOString();
+}
+
 const STORAGE_KEY = 'ts_ctpat_sync_queue_v1';
 const HISTORY_KEY = 'ts_ctpat_sync_history_v1';
 const IDB_NAME = 'ts_ctpat_sync_db_v1';
@@ -643,7 +649,8 @@ export const useSyncStore = defineStore('sync', {
               const insertPayload = {
                 ...safeInsertPayloadBase,
                 folio_pdf: folioAuto,
-                sync_status: 'pending'
+                sync_status: 'pending',
+                expires_at: registroExpiresAtIso()
               };
 
               const { data: inserted, error: insertErr } = await supabase

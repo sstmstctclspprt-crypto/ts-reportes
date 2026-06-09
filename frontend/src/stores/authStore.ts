@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { defineStore } from 'pinia';
 import { supabase } from '../supabaseClient';
 import { SESSION_EXPIRED } from '../utils/supabaseAuthErrors';
+import { useAccessStore } from './accessStore';
 import { useToastStore } from './toastStore';
 const LOGO_BUCKET = ((import.meta.env.VITE_LOGO_BUCKET as string | undefined)?.trim() || 'ctpat-logs');
 
@@ -306,7 +307,11 @@ export const useAuthStore = defineStore('auth', {
           if (this.userId) {
             localStorage.setItem(AUTH_CACHED_USER_ID_KEY, this.userId);
           }
-          await this.ensureDriveConfigIfNeeded();
+          const access = useAccessStore();
+          await access.syncContext();
+          if (access.isApproved) {
+            await this.ensureDriveConfigIfNeeded();
+          }
           if (!this.serviceLogoFile && session.user) {
             const meta = (session.user.user_metadata ?? {}) as Record<string, unknown>;
             const candidate =
@@ -327,6 +332,7 @@ export const useAuthStore = defineStore('auth', {
           this.serviceLogoFile = null;
           this.onedriveSubfolderName = null;
           localStorage.removeItem(AUTH_CACHED_USER_ID_KEY);
+          useAccessStore().reset();
         }
       } catch (e) {
         console.error('Error initSession:', e);
@@ -338,6 +344,7 @@ export const useAuthStore = defineStore('auth', {
           this.serviceLogoFile = null;
           this.onedriveSubfolderName = null;
           localStorage.removeItem(AUTH_CACHED_USER_ID_KEY);
+          useAccessStore().reset();
         } else {
           this.isSignedIn = !!this.userId;
           if (this.userId) {
@@ -441,6 +448,7 @@ export const useAuthStore = defineStore('auth', {
       this.serviceLogoFile = null;
       this.onedriveSubfolderName = null;
       localStorage.removeItem(AUTH_CACHED_USER_ID_KEY);
+      useAccessStore().reset();
     },
     /**
      * Cierra sesión y avisa con un mensaje claro (sin códigos 401/JWT crudos).

@@ -1340,7 +1340,8 @@ async function persistRegistro() {
   const payload = {
     ...insertPayloadBase,
     folio_pdf: folioAuto,
-    sync_status: 'pending'
+    sync_status: 'pending',
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   };
 
   const { data, error } = await supabase

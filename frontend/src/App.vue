@@ -20,6 +20,13 @@
 
           <div class="flex items-center gap-3">
             <template v-if="auth.isSignedIn">
+              <router-link
+                v-if="access.isAdmin"
+                to="/admin"
+                class="hidden sm:inline text-xs font-semibold text-tactical-blue hover:underline"
+              >
+                Admin
+              </router-link>
               <div class="hidden sm:block text-right">
                 <p class="text-xs text-slate-500">Conectado como</p>
                 <p class="text-sm font-medium text-slate-800 truncate max-w-[160px]">
@@ -69,6 +76,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch } from 'vue';
+import { useAccessStore } from './stores/accessStore';
 import { useAuthStore } from './stores/authStore';
 import { usePwaStore } from './stores/pwaStore';
 import { useSyncStore } from './stores/syncStore';
@@ -76,6 +84,7 @@ import ToastContainer from './components/ToastContainer.vue';
 import { supabase } from './supabaseClient';
 
 const auth = useAuthStore();
+const access = useAccessStore();
 const sync = useSyncStore();
 const pwa = usePwaStore();
 
