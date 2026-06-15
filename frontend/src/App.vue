@@ -71,10 +71,15 @@
         <p class="mt-2">Tactical Support</p>
       </div>
     </footer>
+
+    <Analytics />
+    <SpeedInsights />
   </div>
 </template>
 
 <script setup lang="ts">
+import { Analytics } from '@vercel/analytics/vue';
+import { SpeedInsights } from '@vercel/speed-insights/vue';
 import { onBeforeUnmount, onMounted, watch } from 'vue';
 import { useAccessStore } from './stores/accessStore';
 import { useAuthStore } from './stores/authStore';
