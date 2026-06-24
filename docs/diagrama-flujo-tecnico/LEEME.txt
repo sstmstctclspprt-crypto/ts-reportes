@@ -1,0 +1,16 @@
+DIAGRAMA DE FLUJO — Tactical Support C-TPAT
+==========================================
+
+UNA SOLA PAGINA — SOLO EL DIAGRAMA
+----------------------------------
+docs/diagrama-flujo-tecnico/diagrama-flujo-una-pagina.html
+
+- Sin titulos ni textos explicativos
+- Solo el diagrama de flujo completo
+- Se ajusta automaticamente a la pantalla
+- Ctrl+P para PDF (A4 horizontal recomendado, graficos de fondo)
+
+
+VERSION CON EXPLICACIONES PARA PRESENTAR
+----------------------------------------
+docs/diagrama-flujo-tecnico/diagrama-flujo-presentacion.html

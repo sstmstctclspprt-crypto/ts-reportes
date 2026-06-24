@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tactical Support C-TPAT — Diagrama de flujo técnico completo</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --vercel: #000;
+      --supabase: #3ecf8e;
+      --google: #4285f4;
+      --pa: #742774;
+      --frontend: #2563eb;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --bg-soft: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: #0f172a;
+      line-height: 1.5;
+      margin: 0;
+      background: #fff;
+    }
+
+    .no-print {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #0f172a;
+      color: #fff;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+
+    .no-print button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .no-print button:hover { background: #1d4ed8; }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    .cover {
+      text-align: center;
+      padding: 48px 24px 40px;
+      border-bottom: 3px solid var(--frontend);
+      margin-bottom: 40px;
+    }
+
+    .cover h1 {
+      font-size: 1.85rem;
+      margin: 0 0 8px;
+      color: #0f172a;
+    }
+
+    .cover .subtitle {
+      font-size: 1.05rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px 18px;
+      font-size: 0.82rem;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    section {
+      margin-bottom: 48px;
+      page-break-inside: avoid;
+    }
+
+    section.page-break { page-break-before: always; }
+
+    h2 {
+      font-size: 1.35rem;
+      margin: 0 0 6px;
+      color: #1e293b;
+      border-left: 4px solid var(--frontend);
+      padding-left: 12px;
+    }
+
+    h3 {
+      font-size: 1rem;
+      margin: 20px 0 8px;
+      color: #334155;
+    }
+
+    .section-desc {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin: 0 0 16px;
+      max-width: 900px;
+    }
+
+    .diagram-box {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      background: #fff;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+
+    .mermaid { font-size: 13px; }
+
+    .explain-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .explain-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: var(--bg-soft);
+    }
+
+    .explain-card h4 {
+      margin: 0 0 6px;
+      font-size: 0.9rem;
+      color: #1e293b;
+    }
+
+    .explain-card p,
+    .explain-card ul {
+      margin: 0;
+      font-size: 0.82rem;
+      color: #475569;
+    }
+
+    .explain-card ul { padding-left: 18px; }
+
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .tag-vercel { background: var(--vercel); }
+    .tag-supabase { background: #1a7f5a; }
+    .tag-frontend { background: var(--frontend); }
+    .tag-google { background: var(--google); }
+    .tag-pa { background: var(--pa); }
+    .tag-gh { background: #24292f; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 12px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f1f5f9;
+      font-weight: 600;
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.78rem;
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .footer-note {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      .container { padding: 0; max-width: none; }
+      section { margin-bottom: 28px; }
+      .diagram-box { border-color: #ccc; }
+      @page {
+        size: A4 landscape;
+        margin: 12mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <div>
+      <strong>Tactical Support — Diagrama técnico</strong>
+      <span style="opacity:.8; margin-left:8px;">Abre e imprime (Ctrl+P). Recomendado: A4 horizontal.</span>
+    </div>
+    <button type="button" onclick="window.print()">Imprimir / Guardar PDF</button>
+  </div>
+
+  <div class="container">
+    <header class="cover">
+      <h1>Tactical Support C-TPAT</h1>
+      <p class="subtitle">Diagrama de flujo técnico completo — Arquitectura, funciones y flujos de datos</p>
+      <p style="font-size:.85rem;color:#64748b;margin:0 0 20px;">
+        Dominio producción: <strong>tacticalsupport.online</strong> · Proyecto Supabase: <code>ouqwinavncjyyywvfyci</code>
+      </p>
+      <div class="legend">
+        <span><i class="dot" style="background:#2563eb"></i> PWA Frontend (Vue)</span>
+        <span><i class="dot" style="background:#1a7f5a"></i> Supabase (Auth, DB, Storage, Edge)</span>
+        <span><i class="dot" style="background:#000"></i> Vercel (hosting estático)</span>
+        <span><i class="dot" style="background:#4285f4"></i> Google (OAuth + Drive)</span>
+        <span><i class="dot" style="background:#742774"></i> Power Automate / OneDrive</span>
+        <span><i class="dot" style="background:#24292f"></i> GitHub Actions (CI backend)</span>
+      </div>
+    </header>
+
+    <!-- 1. ARQUITECTURA GENERAL -->
+    <section>
+      <h2>1. Arquitectura general del sistema</h2>
+      <p class="section-desc">
+        Vista de alto nivel: qué hace cada plataforma. <strong>Vercel</strong> solo publica la PWA (HTML/JS/CSS).
+        <strong>Supabase</strong> concentra autenticación, base de datos, almacenamiento de archivos y funciones serverless (Edge Functions).
+        <strong>Google</strong> autentica usuarios y guarda PDFs en Drive. <strong>Power Automate</strong> copia el PDF a OneDrive como respaldo.
+      </p>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart TB
+  subgraph USUARIO["👤 Usuario en campo (navegador / móvil)"]
+    U[PWA Tactical Support]
+  end
+
+  subgraph VERCEL["⬛ VERCEL — tacticalsupport.online"]
+    V1[CDN + HTTPS]
+    V2[Archivos estáticos<br/>frontend/dist]
+    V3[vercel.json<br/>headers seguridad + SPA rewrite]
+    V4[Analytics / Speed Insights]
+  end
+
+  subgraph SUPABASE["🟢 SUPABASE — Backend completo"]
+    S1[Auth — Google OAuth + JWT]
+    S2[PostgreSQL + RLS]
+    S3[Storage — 3 buckets]
+    S4[Edge Function<br/>generate-ctpat-pdf]
+    S5[Edge Function<br/>purge-expired-ctpat-data]
+    S6[pg_cron opcional<br/>purge diario BD]
+  end
+
+  subgraph GOOGLE["🔵 GOOGLE"]
+    G1[OAuth / Login]
+    G2[Google Drive API<br/>carpeta TS REPORTES]
+  end
+
+  subgraph PA["🟣 MICROSOFT"]
+    P1[Power Automate Webhook]
+    P2[OneDrive — respaldo PDF]
+  end
+
+  subgraph GHA["⬛ GITHUB ACTIONS"]
+    GH1[Build frontend]
+    GH2[db push migraciones]
+    GH3[Deploy Edge Functions]
+  end
+
+  U -->|HTTPS carga app| V1
+  V1 --> V2
+  U -->|API REST + Auth| S1
+  U -->|INSERT/SELECT registros| S2
+  U -->|Sube fotos/firmas| S3
+  U -->|POST generar PDF| S4
+  S4 -->|Lee/escribe| S2
+  S4 -->|Descarga evidencias| S3
+  S4 -->|Sube PDF backup| S3
+  S4 -->|Multipart upload| G2
+  S4 -->|Webhook signed URL| P1
+  P1 --> P2
+  U -->|Login redirect| G1
+  G1 --> S1
+  GH2 --> S2
+  GH3 --> S4
+  GH3 --> S5
+  S5 -->|DELETE filas vencidas| S2
+  S6 --> S2
+        </pre>
+      </div>
+      <div class="explain-grid">
+        <div class="explain-card">
+          <span class="tag tag-vercel">Vercel</span>
+          <h4>¿Qué es y qué NO hace?</h4>
+          <p>Hosting del frontend Vue/Vite. Entrega la PWA por HTTPS. <strong>No</strong> procesa PDFs, no guarda datos ni ejecuta lógica de negocio.</p>
+          <p style="margin-top:6px"><code>vercel.json</code> · <code>frontend/dist</code></p>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-supabase">Supabase</span>
+          <h4>Corazón del backend</h4>
+          <p>Auth (sesiones JWT), tablas con RLS, buckets de Storage y Edge Functions en Deno. Toda la lógica de registros C-TPAT vive aquí.</p>
+          <p style="margin-top:6px"><code>backend/supabase/</code></p>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-google">Google</span>
+          <h4>Identidad + archivo final</h4>
+          <p>OAuth con scope <code>drive.file</code>. El PDF definitivo se sube a la cuenta Google del operador en carpetas <code>TS REPORTES/PDFs</code>.</p>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-pa">Power Automate</span>
+          <h4>Respaldo OneDrive</h4>
+          <p>Tras generar el PDF, la Edge Function notifica un webhook. Power Automate descarga el PDF (URL firmada) y lo guarda en OneDrive según subcarpeta configurada.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. FRONTEND -->
+    <section class="page-break">
+      <h2>2. Frontend PWA — Estructura y rutas</h2>
+      <p class="section-desc">
+        La aplicación es una <strong>Progressive Web App</strong> (Vue 3 + Pinia + Vue Router) desplegada en Vercel.
+        Incluye Service Worker para caché del shell y cola offline en IndexedDB.
+      </p>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart LR
+  subgraph PWA["PWA — frontend/src"]
+    APP[App.vue<br/>shell + auth header]
+    R[router/index.ts<br/>guards]
+    subgraph VIEWS["Vistas"]
+      H[HomeView /<br/>lista + logo + OneDrive]
+      A[ActivacionView<br/>código acceso]
+      AD[AdminView<br/>códigos + usuarios]
+      RF[RegistroView<br/>formulario C-TPAT]
+      PUB[Privacidad / Términos / Seguridad]
+    end
+    subgraph STORES["Stores Pinia"]
+      AS[authStore<br/>Google OAuth]
+      AC[accessStore<br/>aprobación]
+      SY[syncStore<br/>cola offline + PDF]
+      PW[pwaStore]
+    end
+    subgraph SVC["Servicios"]
+      EV[evidenceStorage.ts<br/>sube a ctpat-evidence]
+      RF2[RegistroForm.vue<br/>validación + guardado]
+    end
+    SW[public/sw.js<br/>Service Worker]
+    IDB[(IndexedDB<br/>cola sync)]
+  end
+
+  APP --> R
+  R --> VIEWS
+  VIEWS --> STORES
+  RF --> RF2
+  RF2 --> EV
+  RF2 --> SY
+  SY --> IDB
+  APP --> SW
+        </pre>
+      </div>
+
+      <h3>Tabla de rutas y guards</h3>
+      <table>
+        <thead>
+          <tr><th>Ruta</th><th>Vista</th><th>Requisitos</th><th>Función</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>/</code></td><td>HomeView</td><td>Login para operar; sin login muestra pantalla de acceso</td><td>Lista registros, configurar logo, subcarpeta OneDrive, reintentar sync</td></tr>
+          <tr><td><code>/activacion</code></td><td>ActivacionView</td><td>Sesión + estado pending/rejected</td><td>Canjear código de acceso (RPC <code>redeem_access_code</code>)</td></tr>
+          <tr><td><code>/admin</code></td><td>AdminView</td><td>Sesión + <code>isAdmin</code></td><td>Crear códigos, aprobar/rechazar usuarios</td></tr>
+          <tr><td><code>/registro/new</code></td><td>RegistroView</td><td>Aprobado + cámara (preflight)</td><td>Nuevo registro C-TPAT completo</td></tr>
+          <tr><td><code>/registro/:id</code></td><td>RegistroView</td><td>Aprobado</td><td>Editar registro existente</td></tr>
+          <tr><td><code>/privacidad</code>, <code>/terminos</code>, <code>/seguridad-soporte</code></td><td>Públicas</td><td>Ninguno</td><td>Documentación legal y soporte</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. AUTH Y ACCESO -->
+    <section class="page-break">
+      <h2>3. Flujo de autenticación y control de acceso</h2>
+      <p class="section-desc">
+        No basta con iniciar sesión en Google: cada usuario pasa por <strong>control de acceso</strong> en Supabase
+        (código de invitación o aprobación manual del administrador). Las políticas RLS bloquean datos hasta estar <code>approved</code>.
+      </p>
+      <div class="diagram-box">
+        <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant U as Usuario (PWA)
+  participant V as Vercel (solo entrega app)
+  participant G as Google OAuth
+  participant SA as Supabase Auth
+  participant DB as Supabase DB (RPC)
+
+  U->>V: Abre tacticalsupport.online
+  V-->>U: Entrega PWA estática
+  U->>SA: signInWithOAuth(google, scope drive.file)
+  SA->>G: Redirect login
+  G-->>SA: Callback + tokens
+  SA-->>U: JWT en localStorage (PKCE)
+  U->>DB: RPC sync_user_access_context()
+  alt Email en app_admin_emails
+    DB-->>U: status=approved, is_admin=true
+  else Usuario nuevo
+    DB-->>U: status=pending
+    U->>U: Redirect /activacion
+    U->>DB: RPC redeem_access_code(TS-XXXXXXXX)
+    DB-->>U: status=approved
+  else Admin manual
+    Note over U,DB: AdminView → admin_set_user_access
+    DB-->>U: approved / rejected
+  end
+  U->>DB: CRUD registros (RLS is_user_approved)
+        </pre>
+      </div>
+      <div class="explain-grid">
+        <div class="explain-card">
+          <span class="tag tag-frontend">Frontend</span>
+          <h4>authStore.ts</h4>
+          <ul>
+            <li><code>signInWithGoogle()</code> — OAuth con permiso Drive</li>
+            <li><code>refreshSessionForApi()</code> — renueva JWT antes de API</li>
+            <li><code>user_drive_config</code> — carpetas Drive y logo</li>
+          </ul>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-supabase">Supabase DB</span>
+          <h4>Tablas de acceso</h4>
+          <ul>
+            <li><code>app_admin_emails</code> — bootstrap admin por email</li>
+            <li><code>user_access</code> — pending / approved / rejected</li>
+            <li><code>access_codes</code> — códigos hasheados SHA-256</li>
+            <li><code>app_admins</code> — admins activos</li>
+          </ul>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-supabase">RLS</span>
+          <h4>Políticas</h4>
+          <p><code>registros_ctpat</code>, <code>user_drive_config</code> y Storage de evidencias requieren <code>user_id = auth.uid() AND is_user_approved()</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. REGISTRO Y PDF -->
+    <section class="page-break">
+      <h2>4. Flujo completo: registro → evidencias → PDF → Drive → OneDrive</h2>
+      <p class="section-desc">
+        Flujo principal de negocio. El usuario llena el formulario C-TPAT, sube fotos y firmas, se inserta en BD y se encola la generación del PDF.
+        La Edge Function <code>generate-ctpat-pdf</code> arma el documento, lo sube a Google Drive y notifica Power Automate.
+      </p>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart TD
+  START([Operador: Nuevo registro]) --> CAM{¿Cámara OK?}
+  CAM -->|No| HOME[Vuelve a Home + aviso]
+  CAM -->|Sí| FORM[RegistroForm.vue<br/>checklists + fotos + firmas]
+  FORM --> VAL[Validación Zod]
+  VAL --> UP{¿URLs data: ?}
+  UP -->|Sí| STG[(Storage ctpat-evidence<br/>organizations/.../images|signatures)]
+  UP -->|No| FOLIO
+  STG --> FOLIO[RPC next_folio_ctpat<br/>folio TS-0001...]
+  FOLIO --> INS[INSERT registros_ctpat<br/>sync_status=pending<br/>expires_at=+7 días]
+  INS --> Q[syncStore.enqueueGeneratePdf]
+  Q --> PQ[processQueue]
+  PQ --> JWT[Obtiene JWT Supabase<br/>+ provider_token Google]
+  JWT --> EF[POST /functions/v1/generate-ctpat-pdf]
+
+  subgraph EDGE["Supabase Edge Function — generate-ctpat-pdf"]
+    EF --> AUTH[auth.getUser JWT]
+    AUTH --> LOAD[Lee registro + user_drive_config]
+    LOAD --> PDF[buildPdf pdf-lib<br/>4 páginas + watermark]
+    PDF --> DL[Descarga evidencias Storage]
+    DL --> GD[Google Drive API<br/>TS REPORTES/PDFs/folio.pdf]
+    GD --> BK[Backup Storage ctpat-pdfs/userId/registroId.pdf]
+    BK --> UPD[UPDATE sync_status=synced<br/>drive_file_id, pdf_storage_path]
+    UPD --> SAN[sanitize: anula checklists<br/>purged_sensitive_at, expires_at]
+    SAN --> WH[Webhook Power Automate<br/>signed URL 1h + onedriveSubfolder]
+  end
+
+  WH --> OD[(OneDrive respaldo)]
+  GD --> DRV[(Google Drive — copia operador)]
+  PQ --> OK([Home: registro sincronizado])
+        </pre>
+      </div>
+
+      <h3>Contenido del PDF (Edge Function)</h3>
+      <table>
+        <thead>
+          <tr><th>Página</th><th>Contenido</th><th>Fuente de datos</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Checklist entrada/salida transporte</td><td><code>registros_ctpat</code> JSON checklists</td></tr>
+          <tr><td>2</td><td>Inspección agrícola</td><td>Checklist agrícola</td></tr>
+          <tr><td>3</td><td>Inspección mecánica (si aplica)</td><td>Checklist mecánica</td></tr>
+          <tr><td>4</td><td>Evidencias fotográficas + firmas</td><td>Storage <code>ctpat-evidence</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5. OFFLINE -->
+    <section class="page-break">
+      <h2>5. Flujo offline y cola de sincronización</h2>
+      <p class="section-desc">
+        Si no hay internet, el registro se guarda en <strong>IndexedDB</strong> (cola local).
+        Al reconectar, <code>syncStore.processQueue</code> inserta en Supabase y dispara la Edge Function.
+        El Service Worker de Vercel cachea el shell de la app para abrir sin red.
+      </p>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart TD
+  subgraph ONLINE["Con internet"]
+    O1[Guardar registro] --> O2[Sube evidencias a Storage]
+    O2 --> O3[INSERT BD]
+    O3 --> O4[Encola generate_pdf]
+    O4 --> O5[processQueue → Edge Function]
+  end
+
+  subgraph OFFLINE["Sin internet"]
+    F1[Guardar registro] --> F2[Encola create_registro_and_generate<br/>IndexedDB ts_ctpat_sync_db_v1]
+    F2 --> F3[Espera evento online]
+  end
+
+  F3 -->|online / visibility / cada 45s| PQ[processQueue]
+  PQ --> INS2[INSERT registros_ctpat]
+  INS2 --> PDF2[generate-ctpat-pdf]
+  PDF2 --> DONE[sync_status = synced]
+
+  subgraph TRIGGERS["Disparadores processQueue"]
+    T1[App mount]
+    T2[evento online + burst 1.2s/3.5s/7s]
+    T3[visibility / focus / pageshow]
+    T4[intervalo 45s]
+    T5[post-guardado RegistroForm]
+    T6[HomeView rehydrate pending]
+  end
+
+  TRIGGERS --> PQ
+        </pre>
+      </div>
+    </section>
+
+    <!-- 6. STORAGE -->
+    <section>
+      <h2>6. Supabase Storage — Buckets y permisos</h2>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart LR
+  subgraph B1["ctpat-logs — PÚBLICO"]
+    L1[logos/userId.png]
+    L1 -->|lee| PWA1[PWA muestra logo]
+    L1 -->|lee| EF1[Edge Function PDF]
+    PWA1 -->|escribe| L1
+  end
+
+  subgraph B2["ctpat-evidence — PRIVADO"]
+    E1[organizations/org/uid/registros/.../images]
+    E2[.../signatures]
+    PWA2[evidenceStorage.ts] -->|upload| E1
+    PWA2 -->|upload| E2
+    EF2[generate-ctpat-pdf] -->|download| E1
+    EF2 -->|download| E2
+  end
+
+  subgraph B3["ctpat-pdfs — PRIVADO"]
+    P1[userId/registroId.pdf]
+    EF3[generate-ctpat-pdf] -->|upload service_role| P1
+    P1 -->|signed URL| PA[Power Automate]
+    PWA3[Usuario] -->|SELECT RLS propio path| P1
+  end
+        </pre>
+      </div>
+    </section>
+
+    <!-- 7. RETENCIÓN -->
+    <section class="page-break">
+      <h2>7. Retención de datos y purga automática</h2>
+      <p class="section-desc">
+        Los datos sensibles en BD se conservan ~7 días y luego se eliminan la fila completa.
+        Los PDFs en Google Drive, OneDrive y Storage <strong>no</strong> se borran automáticamente por el cron de purga.
+      </p>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart TD
+  A[INSERT registro<br/>expires_at = now + 7d] --> B[PDF generado OK]
+  B --> C[sanitizeRegistroSensitiveColumns<br/>checklists → NULL<br/>purged_sensitive_at = now]
+  C --> D[Firmas y image_urls siguen en BD<br/>hasta expires_at]
+  D --> E{¿expires_at vencido?}
+  E -->|Sí| F[purge_expired_ctpat_registros<br/>DELETE fila registros_ctpat]
+  E -->|No| D
+
+  subgraph CRON["Programadores de purga"]
+    C1[pg_cron diario 03:00<br/>purge-ctpat-bd]
+    C2[Edge purge-expired-ctpat-data<br/>X-Purge-Secret o service_role]
+  end
+
+  C1 --> F
+  C2 --> F
+
+  subgraph CONSERVA["NO se purga automáticamente"]
+    K1[Google Drive PDF]
+    K2[OneDrive PDF]
+    K3[Storage ctpat-pdfs]
+    K4[user_drive_config]
+  end
+        </pre>
+      </div>
+    </section>
+
+    <!-- 8. DEPLOY -->
+    <section class="page-break">
+      <h2>8. Despliegue y CI/CD</h2>
+      <div class="diagram-box">
+        <pre class="mermaid">
+flowchart LR
+  DEV[Desarrollador<br/>git push main] --> GHA[GitHub Actions<br/>.github/workflows/deploy.yml]
+  DEV --> VER[Push → Vercel<br/>deploy automático frontend]
+
+  GHA --> B1[npm ci + build]
+  GHA --> SB1[supabase db push<br/>migraciones SQL]
+  GHA --> SB2[deploy generate-ctpat-pdf]
+  GHA --> SB3[deploy purge-expired-ctpat-data]
+
+  VER --> VC[Vercel CDN<br/>tacticalsupport.online]
+  SB1 --> DB[(Supabase PostgreSQL)]
+  SB2 --> EF[Edge Functions]
+  SB3 --> EF
+
+  subgraph ENV["Variables de entorno"]
+    VE[Vercel: VITE_SUPABASE_URL<br/>VITE_SUPABASE_ANON_KEY<br/>VITE_SITE_URL, buckets]
+    SE[Supabase Secrets:<br/>POWER_AUTOMATE_*<br/>PURGE_CRON_SECRET<br/>LOGO_BUCKET, etc.]
+  end
+
+  VE --> VC
+  SE --> EF
+        </pre>
+      </div>
+      <div class="explain-grid">
+        <div class="explain-card">
+          <span class="tag tag-vercel">Vercel</span>
+          <h4>Deploy frontend</h4>
+          <p>Repo conectado en vercel.com. Cada push construye <code>frontend/dist</code>. No corre en GitHub Actions.</p>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-gh">GitHub Actions</span>
+          <h4>Deploy backend</h4>
+          <p>En push a <code>main</code>: migraciones BD + deploy de las 2 Edge Functions. Secrets: <code>SUPABASE_ACCESS_TOKEN</code>, <code>SUPABASE_DB_PASSWORD</code>.</p>
+        </div>
+        <div class="explain-card">
+          <span class="tag tag-supabase">Supabase</span>
+          <h4>Migraciones clave</h4>
+          <ul>
+            <li>Storage RLS y tablas base</li>
+            <li>Retención efímera 7 días</li>
+            <li>Control acceso usuarios</li>
+            <li>OneDrive subfolder en user_drive_config</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. MAPA DE ARCHIVOS -->
+    <section class="page-break">
+      <h2>9. Mapa de archivos del repositorio</h2>
+      <table>
+        <thead>
+          <tr><th>Área</th><th>Ruta principal</th><th>Responsabilidad</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Vercel config</td><td><code>vercel.json</code></td><td>Build, headers seguridad, rewrite SPA</td></tr>
+          <tr><td>Frontend entry</td><td><code>frontend/src/main.ts</code>, <code>App.vue</code></td><td>Bootstrap, auth UI, keep-alive JWT</td></tr>
+          <tr><td>Router + guards</td><td><code>frontend/src/router/index.ts</code></td><td>Rutas, auth, acceso, cámara</td></tr>
+          <tr><td>Formulario C-TPAT</td><td><code>frontend/src/components/RegistroForm.vue</code></td><td>Captura, validación, guardado, encola PDF</td></tr>
+          <tr><td>Sync offline</td><td><code>frontend/src/stores/syncStore.ts</code></td><td>Cola IndexedDB, invoca Edge Function</td></tr>
+          <tr><td>Evidencias</td><td><code>frontend/src/services/evidenceStorage.ts</code></td><td>Upload a bucket ctpat-evidence</td></tr>
+          <tr><td>Supabase client</td><td><code>frontend/src/supabaseClient.ts</code></td><td>Cliente JS con PKCE</td></tr>
+          <tr><td>Service Worker</td><td><code>frontend/public/sw.js</code></td><td>Caché app shell offline</td></tr>
+          <tr><td>PDF Edge Function</td><td><code>backend/supabase/functions/generate-ctpat-pdf/index.ts</code></td><td>Genera PDF, Drive, Storage, webhook</td></tr>
+          <tr><td>Purge Edge Function</td><td><code>backend/supabase/functions/purge-expired-ctpat-data/index.ts</code></td><td>Elimina filas BD vencidas</td></tr>
+          <tr><td>Migraciones SQL</td><td><code>backend/supabase/migrations/*.sql</code></td><td>Esquema, RLS, retención, acceso</td></tr>
+          <tr><td>CI/CD</td><td><code>.github/workflows/deploy.yml</code></td><td>Build + Supabase deploy</td></tr>
+          <tr><td>Scripts admin</td><td><code>scripts/bootstrap-admin.sql</code>, <code>delete-user.sql</code></td><td>Admin inicial, borrado usuario</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 10. RPCs -->
+    <section>
+      <h2>10. Funciones RPC y Edge — referencia rápida</h2>
+      <table>
+        <thead>
+          <tr><th>Nombre</th><th>Dónde</th><th>Quién llama</th><th>Qué hace</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>sync_user_access_context()</code></td><td>Supabase DB</td><td>accessStore</td><td>Sincroniza estado de acceso tras login</td></tr>
+          <tr><td><code>redeem_access_code(code)</code></td><td>Supabase DB</td><td>ActivacionView</td><td>Canjea código → approved</td></tr>
+          <tr><td><code>admin_create_access_code</code></td><td>Supabase DB</td><td>AdminView</td><td>Genera código TS-XXXXXXXX</td></tr>
+          <tr><td><code>admin_set_user_access</code></td><td>Supabase DB</td><td>AdminView</td><td>Aprobar / rechazar / pending</td></tr>
+          <tr><td><code>next_folio_ctpat</code></td><td>Supabase DB</td><td>RegistroForm, syncStore</td><td>Folio secuencial TS-0001…</td></tr>
+          <tr><td><code>purge_expired_ctpat_registros()</code></td><td>Supabase DB</td><td>Edge purge, pg_cron</td><td>DELETE filas con expires_at vencido</td></tr>
+          <tr><td><code>generate-ctpat-pdf</code></td><td>Edge Function</td><td>syncStore (POST)</td><td>PDF + Drive + Storage + Power Automate</td></tr>
+          <tr><td><code>purge-expired-ctpat-data</code></td><td>Edge Function</td><td>Cron externo / Dashboard</td><td>Ejecuta purga BD</td></tr>
+        </tbody>
+      </table>
+
+      <p class="footer-note">
+        Tactical Support C-TPAT · Diagrama técnico generado desde el repositorio APPWEB TS ·
+        Para imprimir: botón superior o Ctrl+P · Formato recomendado: A4 horizontal ·
+        Actualizar este HTML si cambian migraciones, Edge Functions o rutas del frontend.
+      </p>
+    </section>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'neutral',
+      securityLevel: 'loose',
+      flowchart: { htmlLabels: true, curve: 'basis' },
+      sequence: { actorMargin: 40 }
+    });
+  </script>
+</body>
+</html>

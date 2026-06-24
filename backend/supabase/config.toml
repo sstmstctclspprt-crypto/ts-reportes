@@ -3,3 +3,6 @@
 # para evitar bloqueos de preflight/CORS en navegador.
 [functions.generate-ctpat-pdf]
 verify_jwt = false
+
+[functions.purge-expired-ctpat-data]
+verify_jwt = false

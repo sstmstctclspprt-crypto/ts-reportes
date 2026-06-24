@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diagrama de flujo — Tactical Support C-TPAT</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #fff; overflow: hidden; }
+    #page {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4mm;
+    }
+    #fit {
+      transform-origin: center center;
+      line-height: 0;
+    }
+    #fit svg { display: block; max-width: none !important; }
+    @media print {
+      html, body { overflow: visible; }
+      #page { width: 100%; height: 100%; padding: 0; }
+      @page { size: A4 landscape; margin: 3mm; }
+    }
+  </style>
+</head>
+<body>
+  <div id="page">
+    <div id="fit"></div>
+  </div>
+
+  <script>
+    const diagram = `
+flowchart TB
+  subgraph Z0[" "]
+    direction LR
+    U["Usuario"] --> V["VERCEL"] --> P["PWA Vue"] --> SA["Auth JWT"]
+    SA --> SDB["PostgreSQL"] --> SST["Storage"] --> SEF["Edge Fn"]
+    SEF --> GD["Google Drive"] --> PA["Power Automate"] --> GH["GitHub Actions"]
+  end
+
+  subgraph Z1[" "]
+    direction LR
+    A1(["INICIO"]) --> A2["URL HTTPS"] --> A3["VERCEL CDN"] --> A4["App Vue sw.js"]
+  end
+
+  subgraph Z2[" "]
+    direction LR
+    B1{"Sesion"}
+    B2["Google OAuth"] --> B3["Supabase JWT"] --> B4["RPC acceso"] --> B5{"Aprobado"}
+    B6["ActivacionView"] --> B8["HomeView"]
+    B7["AdminView"]
+    B1 -->|No| B2
+    B1 -->|Si| B4
+    B4 --> B5
+    B5 -->|Pending| B6 --> B8
+    B5 -->|Admin| B7
+    B5 -->|Si| B8
+    B5 -->|No| BX1(["FIN"])
+  end
+
+  subgraph Z3[" "]
+    direction LR
+    C1["Nuevo registro"] --> C2{"Camara"} --> C3["RegistroForm"] --> C4{"Online"}
+    C5["Cola offline"] --> C6["processQueue"] --> C7["Upload evidencias"]
+    C8["RPC folio"] --> C9["INSERT BD"]
+    C2 -->|No| CX1(["FIN"])
+    C2 -->|Si| C3
+    C4 -->|No| C5 --> C6 --> C7
+    C4 -->|Si| C7
+    C7 --> C8 --> C9
+  end
+
+  subgraph Z4[" "]
+    direction LR
+    D1["syncStore"] --> D2["generate-ctpat-pdf"] --> D3["auth getUser"] --> D4["Lee BD Storage"] --> D5["buildPdf"] --> D6["Google Drive"] --> D7["Storage backup"] --> D8["UPDATE synced"]
+    D9["sanitize 7d"] --> D10["Webhook OneDrive"] --> D11(["PDF listo"])
+  end
+
+  subgraph Z5[" "]
+    direction LR
+    E1["HomeView OK"] --> E2{"Mas"} --> E3(["FIN"])
+    E2 -->|Si| C1
+    E2 -->|No| E3
+  end
+
+  subgraph Z6[" "]
+    direction LR
+    G1["git push"] --> G2["GitHub Actions"] --> G4["db push"] --> G5["deploy PDF fn"] --> G6["deploy purge fn"]
+    G7["push Vercel"] --> G8["build dist"] --> G9["CDN"]
+    S1["ctpat-logs"] --- S2["ctpat-evidence"] --- S3["ctpat-pdfs"]
+    R1["expires_at"] --> R2["sanitize"] --> R3["cron purge"] --> R4["DELETE BD"]
+    K1["Drive PDF"] --- K2["OneDrive PDF"] --- K3["Storage PDF"]
+  end
+
+  Z0 ~~~ Z1
+  Z1 --> Z2
+  Z2 --> Z3
+  Z3 --> Z4
+  Z4 --> Z5
+  Z5 ~~~ Z6
+  A4 --> B1
+  B8 --> C1
+  C9 --> D1
+  D11 --> E1
+  D9 -.-> R3
+
+  classDef fin fill:#fef3c7,stroke:#d97706,color:#92400e
+  classDef dec fill:#fff7ed,stroke:#ea580c,color:#9a3412
+  classDef fr fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef su fill:#d1fae5,stroke:#059669,color:#065f46
+  classDef go fill:#dbeafe,stroke:#4285f4,color:#1e40af
+  classDef pa fill:#f3e8ff,stroke:#742774,color:#581c87
+  classDef ve fill:#1e293b,stroke:#0f172a,color:#fff
+  classDef gi fill:#f1f5f9,stroke:#475569,color:#334155
+  classDef us fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+
+  class A1,D11,E3,BX1,CX1 fin
+  class B1,B5,C2,C4,E2 dec
+  class A4,B6,B7,B8,C1,C3,C5,C6,E1,P fr
+  class B3,B4,C7,C8,C9,D1,D2,D3,D4,D5,D7,D8,D9,SDB,SST,SEF,S1,S2,S3,R1,R2,R3,R4,K3 su
+  class B2,D6,GD,K1 go
+  class D10,PA,K2 pa
+  class A3,V,G7,G8,G9 ve
+  class G1,G2,G4,G5,G6,GH gi
+  class U us
+  class SA su
+`;
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        fontSize: '11px',
+        fontFamily: 'Segoe UI, system-ui, sans-serif',
+        lineColor: '#64748b'
+      },
+      flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        padding: 6,
+        nodeSpacing: 14,
+        rankSpacing: 18,
+        useMaxWidth: false,
+        wrappingWidth: 90
+      },
+      securityLevel: 'loose'
+    });
+
+    function fitToPage() {
+      const page = document.getElementById('page');
+      const fit = document.getElementById('fit');
+      const svg = fit.querySelector('svg');
+      if (!svg) return;
+
+      svg.style.transform = '';
+      fit.style.transform = '';
+
+      const pw = page.clientWidth;
+      const ph = page.clientHeight;
+      const sw = svg.getBoundingClientRect().width;
+      const sh = svg.getBoundingClientRect().height;
+      if (!sw || !sh) return;
+
+      const scale = Math.min(pw / sw, ph / sh) * 1.127;
+      fit.style.transform = 'scale(' + scale + ')';
+    }
+
+    async function render() {
+      const { svg } = await mermaid.render('flow-single-' + Date.now(), diagram.trim());
+      document.getElementById('fit').innerHTML = svg;
+      requestAnimationFrame(function () {
+        fitToPage();
+        setTimeout(fitToPage, 150);
+      });
+    }
+
+    window.addEventListener('resize', fitToPage);
+    window.addEventListener('beforeprint', fitToPage);
+    render().catch(console.error);
+  </script>
+</body>
+</html>

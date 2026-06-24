@@ -4,7 +4,10 @@
   "workspaces": ["frontend"],
   "scripts": {
     "build": "npm run build -w tactical-support-ctpat-pwa",
+    "db:push": "supabase db push --workdir backend",
     "deploy:generate-ctpat-pdf": "supabase functions deploy generate-ctpat-pdf --project-ref ouqwinavncjyyywvfyci --use-api --yes --workdir backend",
+    "deploy:purge-expired-ctpat-data": "supabase functions deploy purge-expired-ctpat-data --project-ref ouqwinavncjyyywvfyci --use-api --yes --workdir backend",
+    "deploy:functions": "npm run deploy:generate-ctpat-pdf && npm run deploy:purge-expired-ctpat-data",
     "supabase:secrets:list": "supabase secrets list --project-ref ouqwinavncjyyywvfyci --workdir backend"
   }
 }

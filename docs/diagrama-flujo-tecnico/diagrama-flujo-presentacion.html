@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tactical Support C-TPAT — Diagrama de flujo técnico (presentación)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --blue: #1d4ed8;
+      --slate: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --bg: #f1f5f9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--slate);
+    }
+    .bar {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--slate); color: #fff;
+      padding: 12px 20px;
+      display: flex; flex-wrap: wrap; align-items: center;
+      justify-content: space-between; gap: 10px;
+    }
+    .bar button {
+      background: var(--blue); color: #fff; border: none;
+      padding: 9px 16px; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
+    .deck {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }
+    .slide {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+      padding: 32px 28px;
+      margin-bottom: 28px;
+    }
+    .slide h2 {
+      font-size: 1.35rem;
+      margin: 0 0 6px;
+      color: var(--blue);
+      border-left: 5px solid var(--blue);
+      padding-left: 14px;
+    }
+    .slide .lead {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin: 0 0 20px;
+      padding-left: 19px;
+    }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 10px 18px;
+      margin-bottom: 20px; font-size: 0.85rem;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 3px; }
+    .diagram {
+      overflow-x: auto;
+      padding: 12px 0;
+      min-height: 200px;
+    }
+    .diagram .mermaid { display: flex; justify-content: center; }
+    .diagram svg { max-width: none !important; }
+    .cover {
+      text-align: center;
+      padding: 40px 24px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+      color: #fff;
+      border-radius: 16px;
+      margin-bottom: 28px;
+    }
+    .cover h1 { font-size: 1.75rem; margin: 0 0 10px; }
+    .cover p { margin: 0; opacity: .9; font-size: 1rem; }
+    .cover .meta { margin-top: 16px; font-size: 0.85rem; opacity: .75; }
+    .err { color: #b91c1c; padding: 16px; display: none; }
+    @media print {
+      .bar { display: none; }
+      body { background: #fff; }
+      .deck { padding: 0; max-width: none; }
+      .slide { box-shadow: none; break-inside: avoid; page-break-inside: avoid; margin-bottom: 16px; }
+      .cover { background: #0f172a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @page { size: A4 landscape; margin: 10mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <span><strong>Tactical Support C-TPAT</strong> — Diagrama de flujo técnico para presentación</span>
+    <button type="button" onclick="window.print()">Imprimir / PDF</button>
+  </div>
+
+  <div class="deck">
+    <header class="cover">
+      <h1>Diagrama de flujo técnico completo</h1>
+      <p>AppWeb Tactical Support — Registros C-TPAT, PDF, evidencias y sincronización</p>
+      <p class="meta">tacticalsupport.online · Vercel · Supabase · Google Drive · Power Automate · GitHub Actions</p>
+    </header>
+
+    <!-- DIAGRAMA 1: ARQUITECTURA -->
+    <section class="slide">
+      <h2>1. Arquitectura del sistema</h2>
+      <p class="lead">Qué hace cada plataforma y cómo se conectan entre sí.</p>
+      <div class="legend">
+        <span><i class="dot" style="background:#7c3aed"></i>Usuario</span>
+        <span><i class="dot" style="background:#0f172a"></i>Vercel</span>
+        <span><i class="dot" style="background:#2563eb"></i>PWA Frontend</span>
+        <span><i class="dot" style="background:#059669"></i>Supabase</span>
+        <span><i class="dot" style="background:#4285f4"></i>Google</span>
+        <span><i class="dot" style="background:#742774"></i>Power Automate</span>
+        <span><i class="dot" style="background:#475569"></i>GitHub Actions</span>
+      </div>
+      <div class="diagram" id="d1"></div>
+      <p class="err" id="e1">No se pudo cargar el diagrama. Verifica tu conexión a internet.</p>
+    </section>
+
+    <!-- DIAGRAMA 2: FLUJO OPERATIVO COMPLETO -->
+    <section class="slide">
+      <h2>2. Flujo operativo completo (de punta a punta)</h2>
+      <p class="lead">Desde que el operador abre la app hasta que el PDF queda en Drive y OneDrive. Incluye ramas de acceso, offline y admin.</p>
+      <div class="diagram" id="d2"></div>
+      <p class="err" id="e2">No se pudo cargar el diagrama. Verifica tu conexión a internet.</p>
+    </section>
+
+    <!-- DIAGRAMA 3: DESPLIEGUE Y DATOS -->
+    <section class="slide">
+      <h2>3. Despliegue, almacenamiento y retención</h2>
+      <p class="lead">CI/CD, buckets de Storage, Edge Functions y purga automática a los 7 días.</p>
+      <div class="diagram" id="d3"></div>
+      <p class="err" id="e3">No se pudo cargar el diagrama. Verifica tu conexión a internet.</p>
+    </section>
+  </div>
+
+  <script>
+    const charts = {
+      d1: `flowchart TB
+        U["Usuario navegador o movil"]
+        V["VERCEL tacticalsupport.online"]
+        P["PWA Vue 3 Vite Pinia"]
+        SA["SUPABASE Auth JWT"]
+        SDB["SUPABASE PostgreSQL RLS"]
+        SST["SUPABASE Storage 3 buckets"]
+        SEF["SUPABASE Edge Functions"]
+        GD["Google OAuth y Drive"]
+        PA["Power Automate OneDrive"]
+        GH["GitHub Actions CI CD"]
+
+        U -->|"HTTPS"| V
+        V -->|"Sirve estaticos"| P
+        P -->|"API REST Auth"| SA
+        P -->|"CRUD registros"| SDB
+        P -->|"Upload fotos firmas"| SST
+        P -->|"POST generar PDF"| SEF
+        SEF --> SDB
+        SEF --> SST
+        SEF -->|"Multipart PDF"| GD
+        SEF -->|"Webhook"| PA
+        SA --> GD
+        GH -->|"db push y deploy"| SDB
+        GH -->|"deploy functions"| SEF
+        GH -.->|"valida build"| V
+
+        classDef u fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+        classDef ve fill:#1e293b,stroke:#0f172a,color:#fff
+        classDef fr fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+        classDef su fill:#d1fae5,stroke:#059669,color:#065f46
+        classDef go fill:#dbeafe,stroke:#4285f4,color:#1e40af
+        classDef ms fill:#f3e8ff,stroke:#742774,color:#581c87
+        classDef gi fill:#f1f5f9,stroke:#475569,color:#334155
+        class U u
+        class V ve
+        class P fr
+        class SA,SDB,SST,SEF su
+        class GD go
+        class PA ms
+        class GH gi`,
+
+      d2: `flowchart TB
+        subgraph F1["FASE 1 Acceso y hosting"]
+          direction LR
+          A1(["INICIO"]) --> A2["Abre URL HTTPS"]
+          A2 --> A3["VERCEL CDN PWA"]
+          A3 --> A4["Carga App Vue sw.js"]
+        end
+
+        subgraph F2["FASE 2 Autenticacion y control de acceso"]
+          direction LR
+          B1{"Sesion activa"}
+          B2["Login Google OAuth"]
+          B3["Supabase Auth JWT"]
+          B4["RPC sync_user_access_context"]
+          B5{"Usuario aprobado"}
+          B6["ActivacionView codigo"]
+          B7["AdminView aprobar usuarios"]
+          B8["HomeView lista registros"]
+          B1 -->|"No"| B2 --> B3 --> B4 --> B5
+          B1 -->|"Si"| B4
+          B5 -->|"Pending"| B6 --> B8
+          B5 -->|"Admin"| B7
+          B5 -->|"Approved"| B8
+          B5 -->|"Rejected"| BX1(["FIN sin acceso"])
+        end
+
+        subgraph F3["FASE 3 Captura del registro C-TPAT"]
+          direction LR
+          C1["Nuevo registro"]
+          C2{"Camara OK"}
+          C3["RegistroForm checklists"]
+          C4{"Hay internet"}
+          C5["Cola offline IndexedDB"]
+          C6["processQueue al reconectar"]
+          C7["evidenceStorage upload"]
+          C8["RPC next_folio_ctpat"]
+          C9["INSERT registros_ctpat"]
+          C1 --> C2
+          C2 -->|"No"| CX1(["FIN"])
+          C2 -->|"Si"| C3 --> C4
+          C4 -->|"No"| C5 --> C6 --> C7
+          C4 -->|"Si"| C7
+          C7 --> C8 --> C9
+        end
+
+        subgraph F4["FASE 4 Generacion PDF y almacenamiento"]
+          direction LR
+          D1["syncStore cola PDF"]
+          D2["POST generate-ctpat-pdf"]
+          D3["auth getUser valida JWT"]
+          D4["Lee BD Storage logo"]
+          D5["buildPdf pdf-lib 4 pag"]
+          D6["Google Drive TS REPORTES"]
+          D7["Storage ctpat-pdfs backup"]
+          D8["UPDATE synced drive_file_id"]
+          D9["sanitize expires 7 dias"]
+          D10["Power Automate OneDrive"]
+          D11(["PDF listo"])
+          D1 --> D2 --> D3 --> D4 --> D5 --> D6 --> D7 --> D8 --> D9 --> D10 --> D11
+        end
+
+        subgraph F5["FASE 5 Cierre"]
+          direction LR
+          E1["HomeView registro OK"]
+          E2{"Mas registros"}
+          E3(["FIN operacion"])
+          E1 --> E2
+          E2 -->|"Si"| C1
+          E2 -->|"No"| E3
+        end
+
+        F1 --> F2
+        F2 --> F3
+        F3 --> F4
+        F4 --> F5
+        A4 --> B1
+        B8 --> C1
+        C9 --> D1
+        D11 --> E1
+
+        classDef fin fill:#fef3c7,stroke:#d97706,color:#92400e
+        classDef dec fill:#fff7ed,stroke:#ea580c,color:#9a3412
+        classDef fr fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+        classDef su fill:#d1fae5,stroke:#059669,color:#065f46
+        classDef go fill:#dbeafe,stroke:#4285f4,color:#1e40af
+        classDef pa fill:#f3e8ff,stroke:#742774,color:#581c87
+        classDef ve fill:#1e293b,stroke:#0f172a,color:#fff
+        class A1,D11,E3,BX1,CX1 fin
+        class B1,B5,C2,C4,E2 dec
+        class A4,B6,B7,B8,C1,C3,C5,C6,E1 fr
+        class B3,B4,C7,C8,C9,D1,D2,D3,D4,D5,D7,D8,D9 su
+        class B2,D6 go
+        class D10 pa
+        class A3 ve`,
+
+      d3: `flowchart LR
+        subgraph DEPLOY["Despliegue continuo"]
+          direction TB
+          G1["git push main"] --> G2["GitHub Actions"]
+          G2 --> G3["npm ci build frontend"]
+          G2 --> G4["supabase db push SQL"]
+          G4 --> G5["deploy generate-ctpat-pdf"]
+          G4 --> G6["deploy purge-expired-ctpat-data"]
+          G7["push Vercel"] --> G8["build frontend dist"]
+          G8 --> G9["CDN HTTPS dominio"]
+        end
+
+        subgraph STORAGE["Supabase Storage"]
+          direction TB
+          S1["ctpat-logs publico logos"]
+          S2["ctpat-evidence privado fotos firmas"]
+          S3["ctpat-pdfs privado backup PDF"]
+        end
+
+        subgraph RETENTION["Retencion 7 dias"]
+          direction TB
+          R1["expires_at al crear registro"]
+          R2["sanitize tras PDF OK"]
+          R3["pg_cron o Edge cron"]
+          R4["purge_expired_ctpat_registros"]
+          R5["DELETE fila en BD"]
+          R1 --> R2 --> R3 --> R4 --> R5
+        end
+
+        subgraph CONSERVA["Se conservan siempre"]
+          direction TB
+          K1["PDF en Google Drive"]
+          K2["PDF en OneDrive"]
+          K3["PDF en Storage ctpat-pdfs"]
+        end
+
+        R2 -.-> R3
+
+        classDef gh fill:#f1f5f9,stroke:#475569,color:#334155
+        classDef su fill:#d1fae5,stroke:#059669,color:#065f46
+        classDef ve fill:#1e293b,stroke:#0f172a,color:#fff
+        classDef go fill:#dbeafe,stroke:#4285f4,color:#1e40af
+        classDef ms fill:#f3e8ff,stroke:#742774,color:#581c87
+        class G1,G2,G3,G4,G5,G6 gh
+        class G7,G8,G9 ve
+        class S1,S2,S3,R1,R2,R3,R4,R5 su
+        class K1 go
+        class K2 ms
+        class K3 su`
+    };
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        fontSize: '15px',
+        fontFamily: 'Segoe UI, system-ui, sans-serif',
+        lineColor: '#475569'
+      },
+      flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        padding: 16,
+        nodeSpacing: 40,
+        rankSpacing: 50,
+        useMaxWidth: true,
+        wrappingWidth: 200
+      },
+      securityLevel: 'loose'
+    });
+
+    async function renderAll() {
+      for (const [id, code] of Object.entries(charts)) {
+        try {
+          const { svg } = await mermaid.render('svg-' + id + '-' + Date.now(), code.trim());
+          document.getElementById(id).innerHTML = svg;
+        } catch (err) {
+          document.getElementById('e' + id.slice(1)).style.display = 'block';
+          console.error(id, err);
+        }
+      }
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>

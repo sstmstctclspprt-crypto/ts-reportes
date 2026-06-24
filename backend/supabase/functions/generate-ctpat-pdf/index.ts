@@ -2446,6 +2446,35 @@ function normalizeUuid(s: string | null | undefined): string {
   return (s ?? '').trim().toLowerCase();
 }
 
+/** Retención efímera en BD: firmas/evidencias y fila completa se eliminan a los 7 días (cron). */
+const CTPAT_BD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function sanitizeRegistroSensitiveColumns(
+  supabaseServer: ReturnType<typeof createClient>,
+  registroId: string,
+  userId: string
+): Promise<void> {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + CTPAT_BD_RETENTION_MS).toISOString();
+  const { error } = await supabaseServer
+    .from('registros_ctpat')
+    .update({
+      operador: null,
+      checklist_tracto: null,
+      checklist_caja: null,
+      inspeccion_agricola: null,
+      inspeccion_mecanica: null,
+      purged_sensitive_at: now.toISOString(),
+      expires_at: expiresAt
+    })
+    .eq('id', registroId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.warn('[generate-ctpat-pdf] sanitize BD falló (PDF/Drive/PA ya OK):', error.message);
+  }
+}
+
 function jsonError(
   origin: string | null,
   status: number,
@@ -2712,6 +2741,8 @@ Deno.serve(async (req) => {
         driveFileId: driveItemId
       });
     }
+
+    await sanitizeRegistroSensitiveColumns(supabaseServer, data.id, data.user_id!);
 
     return new Response(
       JSON.stringify({

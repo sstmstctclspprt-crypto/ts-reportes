@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tactical Support — Infografía C-TPAT</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100%;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #e8edf2;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      width: 100%;
+      background: #ffffff;
+      padding: 10px clamp(12px, 3vw, 24px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #d1d9e0;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .topbar span { font-size: 11.5px; color: #6b7280; font-weight: 500; letter-spacing: 0.02em; }
+    .topbar button {
+      font-size: 11px; padding: 7px 18px;
+      background: #0C447C; color: #ffffff;
+      border: none; border-radius: 5px; cursor: pointer; font-weight: 700;
+      display: flex; align-items: center; gap: 6px;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+
+    /* ── PAGE ── */
+    .page {
+      width: min(210mm, 100%);
+      max-width: 100%;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.13);
+      margin: clamp(12px, 3vw, 24px) 0 clamp(24px, 5vw, 40px);
+    }
+
+    /* ── HERO ── */
+    .hero {
+      background: #0b2742;
+      padding: clamp(14px, 3vw, 18px) clamp(16px, 4vw, 28px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 9px;
+      border-bottom: 3px solid #0a0b3b;
+    }
+    .hero-logo {
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hero-logo img { width: 100%; height: 100%; object-fit: contain; }
+    .hero h1 {
+      font-size: clamp(15px, 4vw, 17px); font-weight: 800;
+      color: #ffffff; line-height: 1.2;
+    }
+    .hero-sub {
+      font-size: clamp(8.5px, 2.2vw, 9.5px); color: #ffffff;
+      font-weight: 500; letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .hero-badges {
+      display: flex; gap: 6px; flex-wrap: wrap;
+      justify-content: center;
+    }
+    .badge {
+      font-size: 8.5px; font-weight: 700;
+      color: #ffffff;
+      border-radius: 3px;
+      padding: 3px 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    /* ── SECTION ── */
+    .section { padding: clamp(12px, 3vw, 14px) clamp(14px, 4vw, 20px); }
+    .section.alt { background: #f9fafb; }
+
+    .sec-hdr {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 8px;
+    }
+    .sec-num {
+      width: 20px; height: 20px;
+      background: #0C447C; color: #fff;
+      border-radius: 3px;
+      font-size: 9.5px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .sec-ttl {
+      font-size: clamp(9.5px, 2.5vw, 10px); font-weight: 800;
+      color: #111827;
+      text-transform: uppercase;
+      letter-spacing: 0.10em;
+    }
+    .sec-lead {
+      font-size: clamp(9px, 2.4vw, 10px);
+      color: #374151;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+
+    .divider { height: 1px; background: #e5e9ed; }
+
+    /* S1: consiste */
+    .ba-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    @media (max-width: 520px) { .ba-grid { grid-template-columns: 1fr; } }
+
+    .ba-card {
+      padding: 10px 12px; border-radius: 5px;
+      border-left: 3px solid;
+    }
+    .ba-card.before {
+      background: #fff8f8;
+      border: 1px solid #f0c8c8;
+      border-left: 3px solid #d9534f;
+    }
+    .ba-card.after {
+      background: #f6faf5;
+      border: 1px solid #b8ddc4;
+      border-left: 3px solid #2d7d46;
+    }
+    .ba-title {
+      font-size: 10px; font-weight: 800;
+      margin-bottom: 5px; color: #111827;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .dot-r, .dot-g { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-r { background: #d9534f; }
+    .dot-g { background: #2d7d46; }
+    .ba-item {
+      font-size: 9.5px; color: #1f2937;
+      line-height: 1.6; display: flex; gap: 5px;
+    }
+    .ba-item::before { content: "—"; flex-shrink: 0; color: #9ca3af; font-size: 9px; }
+
+    .pill-row {
+      display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;
+    }
+    .pill {
+      font-size: 8px; font-weight: 700;
+      padding: 3px 8px; border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .pill-v { background: #1e293b; color: #fff; }
+    .pill-s { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .pill-g { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .pill-m { background: #f3e8ff; color: #581c87; border: 1px solid #e9d5ff; }
+
+    /* S2: funciona */
+    .flow-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .flow-steps {
+      display: flex; align-items: flex-start;
+      justify-content: space-between;
+      min-width: 480px;
+      margin-top: 4px;
+    }
+    .step {
+      display: flex; flex-direction: column;
+      align-items: center; text-align: center; flex: 1;
+    }
+    .step-num {
+      width: 24px; height: 24px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 800;
+    }
+    .nb { background: #0C447C; color: #fff; }
+    .ng { background: #1e6635; color: #fff; }
+    .np { background: #3730a3; color: #fff; }
+    .step-name { font-size: 8.5px; font-weight: 700; color: #111; margin-top: 4px; }
+    .step-sub { font-size: 7.5px; color: #374151; margin-top: 1px; }
+    .arr { font-size: 13px; color: #6b7280; margin-top: 5px; flex-shrink: 0; }
+    .rt {
+      margin-top: 8px;
+      background: #f0f9f3;
+      border: 1px solid #b8ddc4;
+      border-left: 3px solid #1e6635;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: 9.5px; font-weight: 700;
+      color: #111;
+    }
+    .rt span { color: #1e6635; }
+
+    /* modulos */
+    .modulos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+    @media (max-width: 520px) { .modulos { grid-template-columns: 1fr; } }
+
+    .mcard {
+      background: #fff;
+      border: 1px solid #e5e9ed;
+      border-radius: 5px;
+      padding: 10px 12px;
+      border-top: 3px solid;
+    }
+    .mcard.m-blue   { border-top-color: #0C447C; }
+    .mcard.m-green  { border-top-color: #1e6635; }
+    .mcard.m-purple { border-top-color: #3730a3; }
+    .mcard.m-amber  { border-top-color: #92400e; }
+    .mcard-ttl {
+      font-size: 10px; font-weight: 800;
+      margin-bottom: 5px;
+      display: flex; align-items: center; gap: 5px;
+      color: #111827;
+    }
+    .mcard-ttl i { font-size: 13px; }
+    .m-blue   .mcard-ttl i { color: #0C447C; }
+    .m-green  .mcard-ttl i { color: #1e6635; }
+    .m-purple .mcard-ttl i { color: #3730a3; }
+    .m-amber  .mcard-ttl i { color: #92400e; }
+    .mi {
+      font-size: 9px; color: #374151;
+      line-height: 1.6; display: flex; gap: 5px;
+    }
+    .mi::before { content: "›"; flex-shrink: 0; color: #9ca3af; font-weight: 700; }
+
+    /* S3: beneficios */
+    .adv-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    @media (max-width: 640px) { .adv-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 380px) { .adv-grid { grid-template-columns: 1fr; } }
+
+    .adv-item {
+      background: #fff;
+      border: 1px solid #e5e9ed;
+      border-radius: 5px;
+      padding: 9px 6px;
+      text-align: center;
+    }
+    .adv-item i { font-size: 17px; color: #0C447C; display: block; margin-bottom: 4px; }
+    .adv-name { font-size: 9px; font-weight: 800; color: #111827; display: block; }
+    .adv-sub { font-size: 7.5px; color: #374151; display: block; margin-top: 1px; }
+
+    /* S4: config inicial */
+    .cfg-flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    @media (max-width: 720px) { .cfg-flow { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 400px) { .cfg-flow { grid-template-columns: 1fr; } }
+
+    .cfg-step {
+      background: #fff;
+      border: 1px solid #e5e9ed;
+      border-radius: 5px;
+      padding: 8px 10px;
+      position: relative;
+    }
+    .cfg-step .n {
+      width: 18px; height: 18px;
+      background: #3730a3; color: #fff;
+      border-radius: 3px;
+      font-size: 9px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 5px;
+    }
+    .cfg-step .t { font-size: 9px; font-weight: 800; color: #111; margin-bottom: 3px; }
+    .cfg-step .d { font-size: 8px; color: #4b5563; line-height: 1.5; }
+
+    .cfg-states {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+    }
+    .state {
+      font-size: 8px; font-weight: 700;
+      padding: 4px 10px; border-radius: 20px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .state-p { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .state-a { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .state-r { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .state-ad { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+
+    /* S5: procesos */
+    .proc-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    @media (max-width: 600px) { .proc-grid { grid-template-columns: 1fr; } }
+
+    .proc-card {
+      background: #fff;
+      border: 1px solid #e5e9ed;
+      border-radius: 5px;
+      padding: 10px 12px;
+    }
+    .proc-card h4 {
+      font-size: 9.5px; font-weight: 800;
+      color: #0C447C;
+      margin-bottom: 6px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .proc-card h4 i { font-size: 12px; }
+    .proc-line {
+      font-size: 8.5px; color: #374151;
+      line-height: 1.55;
+      display: flex; gap: 5px;
+      margin-bottom: 3px;
+    }
+    .proc-line::before {
+      content: "→";
+      flex-shrink: 0;
+      color: #0C447C;
+      font-weight: 700;
+      font-size: 8px;
+      margin-top: 1px;
+    }
+
+    .tech-flow {
+      display: flex; flex-wrap: wrap;
+      align-items: center; justify-content: center;
+      gap: 4px 2px;
+      margin-top: 8px;
+      padding: 8px;
+      background: #f8fafc;
+      border: 1px solid #e5e9ed;
+      border-radius: 5px;
+    }
+    .tech-node {
+      font-size: 7.5px; font-weight: 700;
+      padding: 4px 7px; border-radius: 3px;
+      text-align: center; line-height: 1.3;
+    }
+    .tech-arr { font-size: 10px; color: #9ca3af; font-weight: 700; }
+    .tn-u { background: #ede9fe; color: #4c1d95; }
+    .tn-v { background: #1e293b; color: #fff; }
+    .tn-s { background: #d1fae5; color: #065f46; }
+    .tn-e { background: #dbeafe; color: #1e40af; }
+    .tn-g { background: #4285f4; color: #fff; }
+    .tn-p { background: #742774; color: #fff; }
+
+    /* conclusión + footer */
+    .conclusion p {
+      font-size: clamp(9px, 2.4vw, 10px);
+      color: #1f2937;
+      line-height: 1.65;
+      margin-top: 5px;
+    }
+    .conclusion strong { color: #111827; font-weight: 800; }
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+    .tag {
+      font-size: 8.5px; font-weight: 700;
+      background: #f3f4f6; color: #374151;
+      border: 1px solid #d1d9e0;
+      border-radius: 3px; padding: 3px 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .site-footer {
+      margin-top: 12px;
+      padding: 10px clamp(12px, 3vw, 16px);
+      background: #0b2742;
+      color: #e2e8f0;
+      border-radius: 0 0 0 0;
+      text-align: center;
+    }
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 6px 10px;
+      font-size: clamp(8.5px, 2.3vw, 9.5px);
+      line-height: 1.5;
+    }
+    .footer-inner a {
+      color: #93c5fd;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .footer-inner a:hover { text-decoration: underline; }
+    .footer-sep {
+      color: #64748b;
+      user-select: none;
+    }
+    @media (max-width: 480px) {
+      .footer-sep { display: none; }
+      .footer-inner { flex-direction: column; gap: 4px; }
+    }
+
+    @media print {
+      .topbar { display: none !important; }
+      body { background: #fff; }
+      .page { margin: 0; box-shadow: none; width: 210mm; }
+      .flow-wrap { overflow: visible; }
+      .flow-steps { min-width: 0; }
+      @page { size: A4 portrait; margin: 8mm; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span>Infografía &nbsp;·&nbsp; Tactical Support</span>
+    <button onclick="window.print()">
+      <i class="ti ti-download" style="font-size:12px"></i>&nbsp; Imprimir / Guardar PDF
+    </button>
+  </div>
+
+  <div class="page">
+
+    <!-- HERO -->
+    <div class="hero">
+      <div class="hero-logo">
+        <img src="../logo.webp" alt="Tactical Support"/>
+      </div>
+      <h1>Tactical Support</h1>
+      <div class="hero-sub">Digitalización de inspecciones C-TPAT</div>
+      <div class="hero-badges">
+        <span class="badge">Sin papel</span>
+        <span class="badge">PDF al instante</span>
+        <span class="badge">Trazabilidad</span>
+        <span class="badge">Respaldo en nube</span>
+      </div>
+    </div>
+
+    <!-- 1 · EN QUÉ CONSISTE -->
+    <div class="section">
+      <div class="sec-hdr">
+        <span class="sec-num">1</span>
+        <span class="sec-ttl">¿En qué consiste?</span>
+      </div>
+      <p class="sec-lead">
+        <strong>Tactical Support</strong> es una aplicación web (PWA) para digitalizar inspecciones C-TPAT en patio:
+        checklists, evidencias fotográficas, firmas digitales y reportes PDF con folio consecutivo, sin formatos físicos.
+      </p>
+      <div class="ba-grid">
+        <div class="ba-card before">
+          <div class="ba-title"><span class="dot-r"></span> Antes — Proceso en papel</div>
+          <div class="ba-item">Formatos físicos extraviados</div>
+          <div class="ba-item">Información incompleta o ilegible</div>
+          <div class="ba-item">Reportes tardíos o perdidos</div>
+          <div class="ba-item">Sin trazabilidad ni respaldo</div>
+        </div>
+        <div class="ba-card after">
+          <div class="ba-title"><span class="dot-g"></span> Ahora — Proceso digital</div>
+          <div class="ba-item">Todo integrado en una sola app</div>
+          <div class="ba-item">PDF generado al guardar</div>
+          <div class="ba-item">Respaldo automático en nube</div>
+          <div class="ba-item">Trazabilidad con folio TS-n</div>
+        </div>
+      </div>
+      <div class="pill-row">
+        <span class="pill pill-v">Vercel — App PWA</span>
+        <span class="pill pill-s">Supabase — Auth · BD · Storage</span>
+        <span class="pill pill-g">Google — OAuth · Drive</span>
+        <span class="pill pill-m">Microsoft — OneDrive respaldo</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 2 · CÓMO FUNCIONA -->
+    <div class="section alt">
+      <div class="sec-hdr">
+        <span class="sec-num">2</span>
+        <span class="sec-ttl">¿Cómo funciona?</span>
+      </div>
+      <p class="sec-lead">
+        El operador inicia sesión, captura la inspección completa en el dispositivo y, al guardar, el sistema genera el PDF y lo respalda en la nube.
+      </p>
+      <div class="flow-wrap">
+        <div class="flow-steps">
+          <div class="step"><div class="step-num nb">1</div><div class="step-name">Ingreso</div><div class="step-sub">Login Google</div></div>
+          <div class="arr">›</div>
+          <div class="step"><div class="step-num nb">2</div><div class="step-name">C-TPAT</div><div class="step-sub">Checklists</div></div>
+          <div class="arr">›</div>
+          <div class="step"><div class="step-num nb">3</div><div class="step-name">Fotos</div><div class="step-sub">Evidencias</div></div>
+          <div class="arr">›</div>
+          <div class="step"><div class="step-num nb">4</div><div class="step-name">Firmas</div><div class="step-sub">Digital</div></div>
+          <div class="arr">›</div>
+          <div class="step"><div class="step-num nb">5</div><div class="step-name">Guardar</div><div class="step-sub">Folio TS-n</div></div>
+          <div class="arr">›</div>
+          <div class="step"><div class="step-num ng">6</div><div class="step-name">PDF</div><div class="step-sub">Al instante</div></div>
+          <div class="arr">›</div>
+          <div class="step"><div class="step-num np">7</div><div class="step-name">Nube</div><div class="step-sub">Drive + OneDrive</div></div>
+        </div>
+      </div>
+      <div class="rt"><span>&#9679;</span> Al guardar, el PDF se genera de inmediato y queda respaldado automáticamente.</div>
+      <div class="modulos">
+        <div class="mcard m-blue">
+          <div class="mcard-ttl"><i class="ti ti-checkbox"></i> Puntos C-TPAT</div>
+          <div class="mi">Checklist tracto y caja</div>
+          <div class="mi">Inspección agrícola</div>
+          <div class="mi">Placas, sello y línea</div>
+          <div class="mi">Entrada / salida</div>
+        </div>
+        <div class="mcard m-green">
+          <div class="mcard-ttl"><i class="ti ti-camera"></i> Evidencias</div>
+          <div class="mi">Frontal, laterales, puertas</div>
+          <div class="mi">Número de sello</div>
+          <div class="mi">Licencia del operador</div>
+          <div class="mi">Integradas al PDF</div>
+        </div>
+        <div class="mcard m-purple">
+          <div class="mcard-ttl"><i class="ti ti-pencil"></i> Firmas digitales</div>
+          <div class="mi">Firma operador y oficial</div>
+          <div class="mi">Pantalla táctil</div>
+          <div class="mi">Incluidas en el reporte</div>
+        </div>
+        <div class="mcard m-amber">
+          <div class="mcard-ttl"><i class="ti ti-file-description"></i> Reportes PDF</div>
+          <div class="mi">Generado al guardar</div>
+          <div class="mi">Folio consecutivo TS-n</div>
+          <div class="mi">Logo de empresa</div>
+          <div class="mi">Checklist mecánico opcional</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 3 · BENEFICIOS -->
+    <div class="section">
+      <div class="sec-hdr">
+        <span class="sec-num">3</span>
+        <span class="sec-ttl">¿Qué beneficios ofrece?</span>
+      </div>
+      <div class="adv-grid">
+        <div class="adv-item"><i class="ti ti-leaf"></i><span class="adv-name">Cero papel</span><span class="adv-sub">Sin formatos impresos</span></div>
+        <div class="adv-item"><i class="ti ti-shield-check"></i><span class="adv-name">Info protegida</span><span class="adv-sub">Sin extravío</span></div>
+        <div class="adv-item"><i class="ti ti-bolt"></i><span class="adv-name">Tiempo real</span><span class="adv-sub">PDF al guardar</span></div>
+        <div class="adv-item"><i class="ti ti-fingerprint"></i><span class="adv-name">Trazabilidad</span><span class="adv-sub">Folio + evidencias</span></div>
+        <div class="adv-item"><i class="ti ti-adjustments-horizontal"></i><span class="adv-name">Flexible</span><span class="adv-sub">Mecánico opcional</span></div>
+        <div class="adv-item"><i class="ti ti-device-mobile"></i><span class="adv-name">En el patio</span><span class="adv-sub">Celular o tablet</span></div>
+        <div class="adv-item"><i class="ti ti-cloud-upload"></i><span class="adv-name">Doble respaldo</span><span class="adv-sub">Drive + OneDrive</span></div>
+        <div class="adv-item"><i class="ti ti-report-analytics"></i><span class="adv-name">Auditoría</span><span class="adv-sub">Procesos ordenados</span></div>
+        <div class="adv-item"><i class="ti ti-wifi-off"></i><span class="adv-name">Offline</span><span class="adv-sub">Cola al reconectar</span></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 4 · CONFIGURACIÓN INICIAL -->
+    <div class="section alt">
+      <div class="sec-hdr">
+        <span class="sec-num">4</span>
+        <span class="sec-ttl">Configuración inicial — flujo y estados</span>
+      </div>
+      <p class="sec-lead">
+        Antes del primer uso en producción se despliega la infraestructura. Cada usuario nuevo pasa por control de acceso antes de operar.
+      </p>
+      <div class="cfg-flow">
+        <div class="cfg-step">
+          <div class="n">A</div>
+          <div class="t">Despliegue</div>
+          <div class="d">Supabase (BD, Auth, Storage, Edge Functions) + Vercel (PWA) + GitHub Actions (CI/CD)</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">B</div>
+          <div class="t">Admin bootstrap</div>
+          <div class="d">Email admin registrado en BD. Primer login con Google queda aprobado y con panel Admin</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">C</div>
+          <div class="t">Login usuario</div>
+          <div class="d">Abre tacticalsupport.online → Inicia sesión con Google (OAuth + permiso Drive)</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">D</div>
+          <div class="t">Control de acceso</div>
+          <div class="d">Estado <em>pending</em>: canjear código TS-XXXXXXXX o esperar aprobación del admin</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">E</div>
+          <div class="t">Activación</div>
+          <div class="d">Pantalla /activacion con código de invitación generado por el administrador</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">F</div>
+          <div class="t">Config personal</div>
+          <div class="d">En Inicio: logo de servicio y subcarpeta OneDrive para respaldo de PDFs</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">G</div>
+          <div class="t">Listo para operar</div>
+          <div class="d">Estado <em>approved</em> → puede crear registros C-TPAT y generar PDFs</div>
+        </div>
+        <div class="cfg-step">
+          <div class="n">H</div>
+          <div class="t">Admin continuo</div>
+          <div class="d">Panel /admin: crear códigos, aprobar o rechazar usuarios nuevos</div>
+        </div>
+      </div>
+      <div class="cfg-states">
+        <span class="state state-p"><i class="ti ti-clock"></i> pending — espera código o aprobación</span>
+        <span class="state state-a"><i class="ti ti-check"></i> approved — acceso completo</span>
+        <span class="state state-r"><i class="ti ti-x"></i> rejected — sin acceso</span>
+        <span class="state state-ad"><i class="ti ti-shield"></i> admin — gestión de usuarios</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- 5 · PROCESOS Y FUNCIONES -->
+    <div class="section">
+      <div class="sec-hdr">
+        <span class="sec-num">5</span>
+        <span class="sec-ttl">Procesos y funciones — cómo se mueve la app</span>
+      </div>
+      <div class="proc-grid">
+        <div class="proc-card">
+          <h4><i class="ti ti-route"></i> Rutas principales</h4>
+          <div class="proc-line"><strong>/</strong> Inicio — lista registros, config logo y OneDrive</div>
+          <div class="proc-line"><strong>/activacion</strong> Canjear código de acceso</div>
+          <div class="proc-line"><strong>/admin</strong> Panel admin — códigos y usuarios</div>
+          <div class="proc-line"><strong>/registro/new</strong> Nueva inspección C-TPAT</div>
+          <div class="proc-line"><strong>/registro/:id</strong> Editar registro existente</div>
+        </div>
+        <div class="proc-card">
+          <h4><i class="ti ti-database"></i> Guardado del registro</h4>
+          <div class="proc-line">RegistroForm valida datos (Zod) y sube fotos/firmas a Storage</div>
+          <div class="proc-line">RPC <em>next_folio_ctpat</em> asigna folio TS-0001…</div>
+          <div class="proc-line">INSERT en <em>registros_ctpat</em> (sync_status: pending)</div>
+          <div class="proc-line">syncStore encola generación PDF y procesa cola</div>
+          <div class="proc-line">Sin internet: cola offline (IndexedDB) al reconectar</div>
+        </div>
+        <div class="proc-card">
+          <h4><i class="ti ti-file-type-pdf"></i> Generación PDF (Edge Function)</h4>
+          <div class="proc-line">POST <em>generate-ctpat-pdf</em> con JWT del usuario</div>
+          <div class="proc-line">Lee registro, logo y evidencias desde BD/Storage</div>
+          <div class="proc-line">Arma PDF (4 páginas) y sube a Google Drive</div>
+          <div class="proc-line">Backup en Storage + webhook Power Automate → OneDrive</div>
+          <div class="proc-line">UPDATE sync_status=synced · datos sensibles expiran a 7 días</div>
+        </div>
+        <div class="proc-card">
+          <h4><i class="ti ti-refresh"></i> Operación continua</h4>
+          <div class="proc-line">HomeView muestra estado de sync por registro</div>
+          <div class="proc-line">Reintento manual si falla subida a Drive</div>
+          <div class="proc-line">Cron <em>purge-expired-ctpat-data</em> elimina datos vencidos</div>
+          <div class="proc-line">GitHub Actions: migraciones BD + deploy functions</div>
+          <div class="proc-line">Vercel: build y CDN de la PWA en cada push</div>
+        </div>
+      </div>
+      <div class="tech-flow">
+        <span class="tech-node tn-u">Usuario<br/>PWA</span>
+        <span class="tech-arr">›</span>
+        <span class="tech-node tn-v">Vercel<br/>CDN</span>
+        <span class="tech-arr">›</span>
+        <span class="tech-node tn-s">Supabase<br/>Auth·BD·Storage</span>
+        <span class="tech-arr">›</span>
+        <span class="tech-node tn-e">Edge Fn<br/>PDF</span>
+        <span class="tech-arr">›</span>
+        <span class="tech-node tn-g">Google<br/>Drive</span>
+        <span class="tech-arr">›</span>
+        <span class="tech-node tn-p">Power Auto<br/>OneDrive</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- CONCLUSIÓN -->
+    <div class="section conclusion">
+      <p>
+        <strong>Tactical Support</strong> elimina el papel y digitaliza cada paso de la inspección C-TPAT:
+        captura en patio, PDF al instante, trazabilidad con folio y respaldo automático en nube.
+        Mayor control, menos errores y una operación auditable y profesional.
+      </p>
+      <div class="tags">
+        <span class="tag">Sin papel</span>
+        <span class="tag">C-TPAT</span>
+        <span class="tag">Evidencias</span>
+        <span class="tag">Firmas</span>
+        <span class="tag">PDF instantáneo</span>
+        <span class="tag">Trazabilidad</span>
+        <span class="tag">Nube</span>
+      </div>
+    </div>
+
+    <!-- FOOTER RESPONSIVE -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <a href="https://tacticalsupport.online" target="_blank" rel="noopener">tacticalsupport.online</a>
+        <span class="footer-sep">·</span>
+        <span>Tactical Support</span>
+        <span class="footer-sep">·</span>
+        <span>Soporte: Javier Ramirez</span>
+        <span class="footer-sep">·</span>
+        <a href="tel:+528146160553">+52 81 4616 0553</a>
+      </div>
+    </footer>
+
+  </div>
+</body>
+</html>
